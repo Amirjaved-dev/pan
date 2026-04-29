@@ -1,9 +1,10 @@
-import { ENSIdentityManager, type AgentProfile } from '@zero-agents/core';
+import type { AgentProfile } from '@zero-agents/core';
 import chalk from 'chalk';
 import { Command } from 'commander';
 import { config as loadEnv } from 'dotenv';
 import { loadAgent } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
+import { createEnsIdentity, requireEnv } from '../identity/ens.js';
 
 function toAgentProfile(agent: Awaited<ReturnType<typeof loadAgent>>): AgentProfile {
   return {
@@ -13,15 +14,6 @@ function toAgentProfile(agent: Awaited<ReturnType<typeof loadAgent>>): AgentProf
     axlPeerId: agent.axlPeerId ?? undefined,
     url: process.env.NEXT_PUBLIC_APP_URL,
   };
-}
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`${name} is required`);
-  }
-
-  return value;
 }
 
 export function createIdentityCommand(): Command {
@@ -48,7 +40,7 @@ export function createIdentityCommand(): Command {
       loadEnv();
       const config = await loadConfig();
       const agent = await loadAgent(agentName);
-      const identity = new ENSIdentityManager({
+      const identity = await createEnsIdentity({
         ensName: agent.ensName,
         privateKey: requireEnv('ENS_PRIVATE_KEY'),
         rpcUrl: process.env.SEPOLIA_RPC_URL ?? config.ens.rpcUrl,

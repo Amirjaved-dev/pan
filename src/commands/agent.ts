@@ -1,7 +1,10 @@
 import chalk from 'chalk';
 import { Command } from 'commander';
+import { config as loadEnv } from 'dotenv';
 import { createAgentConfig } from '../agents/schema.js';
 import { listAgents, loadAgent, saveAgent } from '../agents/store.js';
+import { loadConfig } from '../config/load-config.js';
+import { detectEnsName, requireEnv } from '../identity/ens.js';
 
 function parseCapabilities(value: string | undefined): string[] {
   if (!value) {
@@ -21,13 +24,16 @@ export function createAgentCommand(): Command {
     .command('create')
     .description('Create local metadata for an ENS-backed agent')
     .argument('<name>', 'agent name')
-    .requiredOption('--ens <ensName>', 'ENS name for this agent')
+    .option('--ens <ensName>', 'ENS name for this agent; auto-detected from ENS_PRIVATE_KEY if omitted')
     .option('--description <description>', 'agent description')
     .option('--capabilities <items>', 'comma-separated capability list')
-    .action(async (name: string, options: { ens: string; description?: string; capabilities?: string }) => {
+    .action(async (name: string, options: { ens?: string; description?: string; capabilities?: string }) => {
+      loadEnv();
+      const config = await loadConfig();
+      const ensName = options.ens ?? (await detectEnsName(requireEnv('ENS_PRIVATE_KEY'), process.env.SEPOLIA_RPC_URL ?? config.ens.rpcUrl));
       const agent = createAgentConfig({
         name,
-        ensName: options.ens,
+        ensName,
         description: options.description,
         capabilities: parseCapabilities(options.capabilities),
       });
