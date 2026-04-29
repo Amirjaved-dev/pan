@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { createRequire } from 'node:module';
+import { ToolSandbox } from '@zero-agents/core';
 import { config as loadEnv } from 'dotenv';
 import { loadConfig } from '../config/load-config.js';
 import { detectEnsName } from '../identity/ens.js';
@@ -84,20 +84,33 @@ async function checkSandbox(allowUnsafeNodeVmFallback: boolean): Promise<Check> 
     };
   }
 
-  try {
-    createRequire(import.meta.url)('isolated-vm');
+  const sandbox = new ToolSandbox({ allowUnsafeNodeVmFallback: false });
+  const result = await sandbox.run('async function execute() { return { ok: true }; }', {}, 1000);
+
+  if (result.success) {
     return {
       name: 'Tool sandbox',
       ok: true,
       detail: 'isolated-vm available',
     };
-  } catch (error) {
-    return {
-      name: 'Tool sandbox',
-      ok: false,
-      detail: 'isolated-vm unavailable; run pnpm approve-builds and rebuild, or set sandbox.allowUnsafeNodeVmFallback=true for dev',
-    };
   }
+
+  return {
+    name: 'Tool sandbox',
+    ok: false,
+    detail: `${result.error ?? 'isolated-vm unavailable'}; use Node 22/24 with pnpm install, or install Visual Studio Build Tools and rebuild`,
+  };
+}
+
+function checkNodeRuntime(): Check {
+  const major = Number.parseInt(process.versions.node.split('.')[0] ?? '0', 10);
+  const ok = major >= 22 && major < 25;
+
+  return {
+    name: 'Node.js runtime',
+    ok,
+    detail: ok ? process.version : `${process.version}; use Node 22 or 24 for isolated-vm prebuild support`,
+  };
 }
 
 function printCheck(check: Check): void {
@@ -122,6 +135,7 @@ export async function doctorCommand(): Promise<void> {
   }
 
   const checks: Check[] = [
+    checkNodeRuntime(),
     envCheck('0G private key', process.env.ZERO_G_PRIVATE_KEY),
     envCheck('ENS private key', process.env.ENS_PRIVATE_KEY),
     envCheck('Sepolia RPC URL', process.env.SEPOLIA_RPC_URL),

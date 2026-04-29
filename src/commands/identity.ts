@@ -5,6 +5,7 @@ import { config as loadEnv } from 'dotenv';
 import { loadAgent } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
 import { createEnsIdentity, requireEnv } from '../identity/ens.js';
+import { patchEnsSequentialWrites } from '../runtime/patch-ens.js';
 
 function toAgentProfile(agent: Awaited<ReturnType<typeof loadAgent>>): AgentProfile {
   return {
@@ -40,6 +41,7 @@ export function createIdentityCommand(): Command {
       loadEnv();
       const config = await loadConfig();
       const agent = await loadAgent(agentName);
+      patchEnsSequentialWrites();
       const identity = await createEnsIdentity({
         ensName: agent.ensName,
         privateKey: requireEnv('ENS_PRIVATE_KEY'),

@@ -12,7 +12,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22 <25"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "isolated-vm"
+    ]
   },
   "dependencies": {
     "@zero-agents/core": "^0.1.1",
@@ -20,6 +25,7 @@
     "commander": "^12.1.0",
     "dotenv": "^16.4.5",
     "ora": "^8.1.0",
+    "viem": "^2.48.4",
     "zod": "^3.23.8"
   },
   "devDependencies": {
