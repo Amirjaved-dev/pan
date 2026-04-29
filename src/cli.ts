@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import { createAgentCommand } from './commands/agent.js';
 import { doctorCommand } from './commands/doctor.js';
 import { initCommand } from './commands/init.js';
 
@@ -14,6 +15,8 @@ program
 program.command('doctor').description('Check required Pan Agents infrastructure').action(doctorCommand);
 
 program.command('init').description('Initialize Pan Agents configuration').action(initCommand);
+
+program.addCommand(createAgentCommand());
 
 program
   .command('ask')
