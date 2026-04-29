@@ -2,10 +2,11 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { ToolRegistry } from '@zero-agents/core';
 import { config as loadEnv } from 'dotenv';
+import { readFile } from 'node:fs/promises';
 import { requireEnv } from '../identity/ens.js';
 import { loadAgent } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
-import { getAgentRegistryPath } from '../config/paths.js';
+import { getAgentExperiencePath, getAgentRegistryPath } from '../config/paths.js';
 import { withQuietConsole } from '../runtime/quiet-console.js';
 
 function createRegistry(agentName: string): ToolRegistry {
@@ -17,32 +18,58 @@ function createRegistry(agentName: string): ToolRegistry {
   });
 }
 
+type LocalExperience = {
+  toolUsed?: string;
+  task?: string;
+  success?: boolean;
+  qualityScore?: number;
+  createdAt?: number;
+};
+
+async function getLocalTools(agentName: string): Promise<Array<{ name: string; uses: number; lastTask?: string; lastUsedAt?: number }>> {
+  const raw = await readFile(getAgentExperiencePath(agentName), 'utf8').catch(() => null);
+  if (!raw) return [];
+
+  const parsed = JSON.parse(raw) as { experiences?: LocalExperience[] };
+  const tools = new Map<string, { name: string; uses: number; lastTask?: string; lastUsedAt?: number }>();
+
+  for (const experience of parsed.experiences ?? []) {
+    if (!experience.success || !experience.toolUsed) continue;
+    const current = tools.get(experience.toolUsed) ?? { name: experience.toolUsed, uses: 0 };
+    current.uses += 1;
+    if (!current.lastUsedAt || (experience.createdAt ?? 0) > current.lastUsedAt) {
+      current.lastTask = experience.task;
+      current.lastUsedAt = experience.createdAt;
+    }
+    tools.set(experience.toolUsed, current);
+  }
+
+  return Array.from(tools.values()).sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0));
+}
+
 export async function cmdToolsList(options: { agent?: string }): Promise<void> {
   const config = await loadConfig();
   const agent = options.agent ?? config.defaultAgent;
   await loadAgent(agent);
-  const registry = createRegistry(agent);
 
   console.log(chalk.bold(`\n  Tools for ${chalk.cyan(agent)}:\n`));
 
   try {
-    const tools = await withQuietConsole(() => registry.exportTools());
+    const tools = await getLocalTools(agent);
     if (tools.length === 0) {
       console.log(chalk.gray('  No tools found. Run a task to generate tools.'));
       return;
     }
 
     for (const tool of tools.slice(0, 20)) {
-      const t = tool as unknown as Record<string, unknown>;
-      const name = t.name ?? 'unnamed';
-      console.log(`  ${chalk.green(String(name))}`);
-      if (t.rootHash) console.log(chalk.gray(`    Hash: ${String(t.rootHash).slice(0, 20)}...`));
+      console.log(`  ${chalk.green(tool.name)}`);
+      if (tool.lastTask) console.log(chalk.gray(`    Last task: ${tool.lastTask}`));
+      console.log(chalk.gray(`    Uses: ${tool.uses}`));
       console.log();
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.log(chalk.yellow(`  Could not load tool index: ${message}`));
-    console.log(chalk.gray('  Tools may exist on 0G storage but index is not yet synced locally.'));
+    console.log(chalk.yellow(`  Could not load local tool memory: ${message}`));
   }
 }
 

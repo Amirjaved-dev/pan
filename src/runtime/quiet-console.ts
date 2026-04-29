@@ -26,5 +26,8 @@ export async function withQuietConsole<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export function writeLine(value = ''): void {
+  if (process.stdout.isTTY) {
+    process.stdout.write('\r\x1b[2K');
+  }
   process.stdout.write(`${value}\n`);
 }

@@ -115,7 +115,9 @@ async function cmdTools({ args, ctx }: { args: string; ctx: ShellContext }): Pro
 
 export function getShellCommand(input: string): { command: ShellCommand; args: string } | null {
   const trimmed = input.trim();
-  if (!trimmed.startsWith('/')) return null;
+  if (!trimmed.startsWith('/')) {
+    return getNaturalShellCommand(trimmed);
+  }
 
   const spaceIdx = trimmed.indexOf(' ');
   const name = spaceIdx === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIdx);
@@ -125,6 +127,32 @@ export function getShellCommand(input: string): { command: ShellCommand; args: s
   if (!entry) return null;
 
   return { command: entry.fn, args };
+}
+
+function getNaturalShellCommand(input: string): { command: ShellCommand; args: string } | null {
+  const normalized = input.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+  if (/\b(help|commands|what can i do)\b/.test(normalized)) {
+    return { command: commands.help.fn, args: '' };
+  }
+
+  if (/\b(status|health|config)\b/.test(normalized)) {
+    return { command: commands.status.fn, args: '' };
+  }
+
+  if (/\b(agent|agents)\b/.test(normalized) && /\b(list|available|show|what)\b/.test(normalized)) {
+    return { command: commands.agent.fn, args: '' };
+  }
+
+  if (/\b(tool|tools)\b/.test(normalized) && /\b(list|available|show|what|have|installed)\b/.test(normalized)) {
+    return { command: commands.tools.fn, args: '' };
+  }
+
+  if (/\b(network|axl|peer|peers)\b/.test(normalized) && /\b(status|show|what|list)\b/.test(normalized)) {
+    return { command: commands.network.fn, args: '' };
+  }
+
+  return null;
 }
 
 export function isExitCommand(input: string): boolean {
