@@ -19,3 +19,11 @@ export function getAgentsDir(cwd = process.cwd()): string {
 export function getAgentPath(agentName: string, cwd = process.cwd()): string {
   return join(getAgentsDir(cwd), `${agentName}.json`);
 }
+
+export function getAgentRegistryPath(agentName: string, cwd = process.cwd()): string {
+  return join(getAgentsDir(cwd), `${agentName}.registry.json`);
+}
+
+export function getAgentExperiencePath(agentName: string, cwd = process.cwd()): string {
+  return join(getAgentsDir(cwd), `${agentName}.experiences.json`);
+}

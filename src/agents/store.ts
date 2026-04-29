@@ -12,7 +12,13 @@ export async function saveAgent(agent: AgentConfig, cwd = process.cwd()): Promis
 }
 
 export async function loadAgent(agentName: string, cwd = process.cwd()): Promise<AgentConfig> {
-  const raw = await readFile(getAgentPath(agentName, cwd), 'utf8');
+  let raw: string;
+  try {
+    raw = await readFile(getAgentPath(agentName, cwd), 'utf8');
+  } catch (error) {
+    throw new Error(`Agent "${agentName}" not found. Run pan agent create ${agentName} first.`);
+  }
+
   return agentConfigSchema.parse(JSON.parse(raw));
 }
 

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import chalk from 'chalk';
 import { createAgentCommand } from './commands/agent.js';
+import { createAskCommand } from './commands/ask.js';
 import { doctorCommand } from './commands/doctor.js';
 import { createIdentityCommand } from './commands/identity.js';
 import { initCommand } from './commands/init.js';
@@ -19,13 +21,10 @@ program.command('init').description('Initialize Pan Agents configuration').actio
 
 program.addCommand(createAgentCommand());
 program.addCommand(createIdentityCommand());
+program.addCommand(createAskCommand());
 
-program
-  .command('ask')
-  .description('Run a single agent task')
-  .argument('<task...>', 'task to run')
-  .action((taskParts: string[]) => {
-    console.log(`pan ask: ${taskParts.join(' ')}`);
-  });
-
-program.parse();
+program.parseAsync().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(chalk.red('[error]'), message);
+  process.exitCode = 1;
+});
