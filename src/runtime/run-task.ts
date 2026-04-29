@@ -1,6 +1,7 @@
 import type { TaskRequest, TaskResult } from '@zero-agents/core';
 import chalk from 'chalk';
 import { createPanAgent } from './create-agent.js';
+import { withQuietConsole, writeLine } from './quiet-console.js';
 
 function formatOutput(output: unknown): string {
   if (typeof output === 'string') {
@@ -31,21 +32,22 @@ export async function runTask(task: string, agentName?: string): Promise<TaskRes
   const agent = await createPanAgent(agentName);
 
   try {
-    const result = await agent.run(createTaskRequest(task));
+    const result = await withQuietConsole(() => agent.run(createTaskRequest(task)));
 
-    console.log(chalk.green('[result]'));
-    console.log(formatOutput(result.output));
+    writeLine(chalk.green('[result]'));
+    writeLine(formatOutput(result.output));
 
     if (result.strategy) {
-      console.log(chalk.gray(`[strategy] ${result.strategy}`));
+      const suffix = result.strategyReason ? ` - ${result.strategyReason}` : '';
+      writeLine(chalk.gray(`[strategy] ${result.strategy}${suffix}`));
     }
 
     if (result.toolUsed) {
-      console.log(chalk.gray(`[tool] ${result.toolUsed}`));
+      writeLine(chalk.gray(`[tool] ${result.toolUsed}`));
     }
 
     if (result.experienceId) {
-      console.log(chalk.gray(`[memory] ${result.experienceId}`));
+      writeLine(chalk.gray(`[memory] ${result.experienceId}`));
     }
 
     return result;

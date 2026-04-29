@@ -6,6 +6,7 @@ import { requireEnv } from '../identity/ens.js';
 import { loadAgent } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
 import { getAgentRegistryPath } from '../config/paths.js';
+import { withQuietConsole } from '../runtime/quiet-console.js';
 
 function createRegistry(agentName: string): ToolRegistry {
   loadEnv();
@@ -25,7 +26,7 @@ export async function cmdToolsList(options: { agent?: string }): Promise<void> {
   console.log(chalk.bold(`\n  Tools for ${chalk.cyan(agent)}:\n`));
 
   try {
-    const tools = await registry.exportTools();
+    const tools = await withQuietConsole(() => registry.exportTools());
     if (tools.length === 0) {
       console.log(chalk.gray('  No tools found. Run a task to generate tools.'));
       return;
@@ -53,7 +54,7 @@ async function cmdToolsShow(name: string, options: { agent?: string }): Promise<
 
   console.log(chalk.bold(`\n  Tool: ${chalk.cyan(name)}\n`));
 
-  const tool = await registry.getToolByName(name);
+  const tool = await withQuietConsole(() => registry.getToolByName(name));
   if (!tool) {
     console.log(chalk.red(`  Tool "${name}" not found in registry.`));
     return;
@@ -68,7 +69,7 @@ async function cmdToolsShow(name: string, options: { agent?: string }): Promise<
   }
   if (t.rootHash) console.log(`\n  0G Hash:     ${t.rootHash}`);
 
-  const idxHash = await registry.getIndexRootHash();
+  const idxHash = await withQuietConsole(() => registry.getIndexRootHash());
   if (idxHash) console.log(`  Index Hash:  ${idxHash}`);
 }
 
@@ -81,7 +82,7 @@ export async function cmdToolsSearch(query: string, options: { agent?: string })
   console.log(chalk.bold(`\n  Searching tools for: "${chalk.cyan(query)}"\n`));
 
   try {
-    const results = await registry.searchTools(query);
+    const results = await withQuietConsole(() => registry.searchTools(query));
     if (results.length === 0) {
       console.log(chalk.gray('  No matching tools found.'));
       return;
