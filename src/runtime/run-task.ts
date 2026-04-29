@@ -28,6 +28,18 @@ function createTaskRequest(task: string): TaskRequest {
   };
 }
 
+function formatStrategy(result: TaskResult): string | null {
+  if (!result.strategy) return null;
+
+  const reason = result.strategyReason ?? '';
+  const mentionedTool = reason.match(/tool "([^"]+)"/)?.[1];
+  if (mentionedTool && result.toolUsed && mentionedTool !== result.toolUsed) {
+    return result.strategy;
+  }
+
+  return reason ? `${result.strategy} - ${reason}` : result.strategy;
+}
+
 export async function runTask(task: string, agentName?: string): Promise<TaskResult> {
   const agent = await createPanAgent(agentName);
 
@@ -37,9 +49,9 @@ export async function runTask(task: string, agentName?: string): Promise<TaskRes
     writeLine(chalk.green('[result]'));
     writeLine(formatOutput(result.output));
 
-    if (result.strategy) {
-      const suffix = result.strategyReason ? ` - ${result.strategyReason}` : '';
-      writeLine(chalk.gray(`[strategy] ${result.strategy}${suffix}`));
+    const strategy = formatStrategy(result);
+    if (strategy) {
+      writeLine(chalk.gray(`[strategy] ${strategy}`));
     }
 
     if (result.toolUsed) {

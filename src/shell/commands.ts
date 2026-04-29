@@ -4,6 +4,7 @@ import { loadConfig } from '../config/load-config.js';
 import { doctorCommand } from '../commands/doctor.js';
 import { cmdToolsList, cmdToolsSearch } from '../commands/tools.js';
 import { cmdNetworkStatus } from '../commands/network.js';
+import { classifyShellIntent } from './intent.js';
 
 export interface ShellContext {
   agentName: string;
@@ -42,6 +43,14 @@ const commands: Record<string, { fn: ShellCommand; description: string }> = {
     fn: () => cmdNetworkStatus(),
     description: 'Show AXL network status',
   },
+  smalltalk: {
+    fn: () => printSmalltalk(),
+    description: 'Explain what Pan can do',
+  },
+  clarify: {
+    fn: () => printClarification(),
+    description: 'Ask for a clearer task',
+  },
   exit: {
     fn: () => { process.exit(0); },
     description: 'Exit Pan shell',
@@ -57,6 +66,20 @@ function printHelp(): void {
   }
   console.log();
   console.log(chalk.gray('  Anything else is sent to your agent as a task.'));
+  console.log();
+}
+
+function printSmalltalk(): void {
+  console.log();
+  console.log(chalk.gray('  Tell me a task, or ask for /help, /tools, /status, /agent, or /network.'));
+  console.log(chalk.gray('  Example: find the price of eth'));
+  console.log();
+}
+
+function printClarification(): void {
+  console.log();
+  console.log(chalk.yellow('  I need a clearer task before generating a tool.'));
+  console.log(chalk.gray('  Try: /tools, /status, or a concrete task like "find the price of eth".'));
   console.log();
 }
 
@@ -130,29 +153,26 @@ export function getShellCommand(input: string): { command: ShellCommand; args: s
 }
 
 function getNaturalShellCommand(input: string): { command: ShellCommand; args: string } | null {
-  const normalized = input.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  const intent = classifyShellIntent(input);
 
-  if (/\b(help|commands|what can i do)\b/.test(normalized)) {
-    return { command: commands.help.fn, args: '' };
+  switch (intent.type) {
+    case 'help':
+      return { command: commands.help.fn, args: '' };
+    case 'status':
+      return { command: commands.status.fn, args: '' };
+    case 'tools':
+      return { command: commands.tools.fn, args: intent.query ?? '' };
+    case 'agents':
+      return { command: commands.agent.fn, args: '' };
+    case 'network':
+      return { command: commands.network.fn, args: '' };
+    case 'smalltalk':
+      return { command: commands.smalltalk.fn, args: '' };
+    case 'clarify':
+      return { command: commands.clarify.fn, args: intent.reason };
+    case 'agent_task':
+      return null;
   }
-
-  if (/\b(status|health|config)\b/.test(normalized)) {
-    return { command: commands.status.fn, args: '' };
-  }
-
-  if (/\b(agent|agents)\b/.test(normalized) && /\b(list|available|show|what)\b/.test(normalized)) {
-    return { command: commands.agent.fn, args: '' };
-  }
-
-  if (/\b(tool|tools)\b/.test(normalized) && /\b(list|available|show|what|have|installed)\b/.test(normalized)) {
-    return { command: commands.tools.fn, args: '' };
-  }
-
-  if (/\b(network|axl|peer|peers)\b/.test(normalized) && /\b(status|show|what|list)\b/.test(normalized)) {
-    return { command: commands.network.fn, args: '' };
-  }
-
-  return null;
 }
 
 export function isExitCommand(input: string): boolean {
