@@ -1,0 +1,198 @@
+# Pan Agents
+
+Claude Code-style CLI for autonomous agent workflows powered by 0G Compute, 0G Storage, ENS, and Gensyn AXL.
+
+This repo is already configured for this Windows machine at:
+
+```powershell
+C:\Users\Amir\Desktop\pan agents
+```
+
+## Quick Start On This Machine
+
+Open PowerShell in the project folder:
+
+```powershell
+cd "C:\Users\Amir\Desktop\pan agents"
+```
+
+Run the health check:
+
+```powershell
+.\pan.ps1 doctor
+```
+
+Expected result:
+
+```text
+PASS Pan config: .pan-agents/config.json loaded
+PASS Node.js runtime: v24.15.0
+PASS 0G private key: configured
+PASS ENS private key: configured
+PASS Sepolia RPC URL: configured
+PASS ENS auto-detect: amir.eth
+PASS Tool sandbox: isolated-vm available
+PASS Gensyn AXL: reachable on port 9002
+```
+
+Start the interactive shell:
+
+```powershell
+.\pan.ps1
+```
+
+Inside the shell, type:
+
+```text
+/help
+/status
+/agent
+/tools
+/network
+Return the number 2 as JSON
+/exit
+```
+
+## Common Commands
+
+Run a one-off task:
+
+```powershell
+.\pan.ps1 ask --agent auto-agent "Return the number 2 as JSON"
+```
+
+List agents:
+
+```powershell
+.\pan.ps1 agent list
+```
+
+Show an agent:
+
+```powershell
+.\pan.ps1 agent show auto-agent
+```
+
+Create a new agent:
+
+```powershell
+.\pan.ps1 agent create research-agent --description "Research agent" --capabilities "research,summarize,compare"
+```
+
+Show ENS identity:
+
+```powershell
+.\pan.ps1 identity show auto-agent
+```
+
+Publish ENS identity records:
+
+```powershell
+.\pan.ps1 identity publish auto-agent
+```
+
+List tools persisted on 0G Storage:
+
+```powershell
+.\pan.ps1 tools list --agent auto-agent
+```
+
+Search tools:
+
+```powershell
+.\pan.ps1 tools search "number" --agent auto-agent
+```
+
+Show AXL network status:
+
+```powershell
+.\pan.ps1 network status
+```
+
+## Why Use `pan.ps1`?
+
+Your system Node.js is newer than `isolated-vm` supports. Pan Agents needs Node.js 22 or 24 so the secure sandbox can load correctly.
+
+The `pan.ps1` launcher automatically prepends this project-local Node runtime:
+
+```text
+.local-node\node-v24.15.0-win-x64
+```
+
+That makes commands work on this machine without changing global Node.js.
+
+## Required Local Files
+
+These are intentionally git-ignored because they contain local config or secrets:
+
+```text
+.env
+.pan-agents/config.json
+.pan-agents/agents/*.json
+.local-node/
+```
+
+Your `.env` must include:
+
+```text
+ZERO_G_PRIVATE_KEY=...
+ENS_PRIVATE_KEY=...
+SEPOLIA_RPC_URL=...
+AXL_PORT=9002
+```
+
+Do not add `ENS_NAME`; Pan auto-detects it from `ENS_PRIVATE_KEY`.
+
+## If PowerShell Blocks The Script
+
+If Windows says scripts are disabled, run this once in the same PowerShell window:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+Then retry:
+
+```powershell
+.\pan.ps1 doctor
+```
+
+## If Something Fails
+
+Run:
+
+```powershell
+.\pan.ps1 doctor
+```
+
+Fix the first failing check before running tasks.
+
+Most common causes:
+
+- Node runtime is not 22 or 24: keep `.local-node\node-v24.15.0-win-x64` in this project or install Node 24 globally.
+- `isolated-vm` unavailable: run `.\pan.ps1 doctor` through the launcher, not plain `pnpm dev` with Node 25.
+- AXL unreachable: start or keep the Gensyn AXL node listening on port `9002`.
+- ENS publish fails: verify Sepolia RPC and that the ENS wallet has Sepolia ETH.
+
+## Development Commands
+
+Build TypeScript:
+
+```powershell
+.\pan.ps1 --help
+corepack pnpm build
+```
+
+Run typecheck without emitting files:
+
+```powershell
+corepack pnpm typecheck
+```
+
+If you run pnpm directly, make sure Node 24 is first on PATH:
+
+```powershell
+$nodeDir = (Resolve-Path ".local-node\node-v24.15.0-win-x64").Path
+$env:PATH = "$nodeDir;$env:PATH"
+corepack pnpm typecheck
+```
