@@ -6,9 +6,14 @@ import type { ShellContext } from './commands.js';
 import { getShellCommand, isExitCommand } from './commands.js';
 import { buildPrompt, printWelcome } from './prompt.js';
 
+const MAX_HISTORY = 50;
+const CONTINUATION_PROMPT = chalk.dim('... ');
+
 export async function startRepl(): Promise<void> {
   const config = await loadConfig();
   let currentAgent = config.defaultAgent;
+  const history: string[] = [];
+  let historyIdx = -1;
 
   const ctx: ShellContext = {
     get agentName() {
@@ -28,13 +33,42 @@ export async function startRepl(): Promise<void> {
     prompt: buildPrompt(currentAgent),
   });
 
+  rl.on('SIGINT', () => {
+    rl.write('', { ctrl: true });
+    console.log(chalk.yellow('\n  ^C'));
+    rl.prompt();
+  });
+
+  function pushHistory(line: string): void {
+    if (line && line !== history[history.length - 1]) {
+      history.push(line);
+      if (history.length > MAX_HISTORY) history.shift();
+    }
+    historyIdx = -1;
+  }
+
   while (true) {
     try {
       rl.setPrompt(buildPrompt(currentAgent));
-      const input = await rl.question('');
+      let input = await rl.question('');
+
+      if (input.endsWith('\\')) {
+        let continued = input.slice(0, -1);
+        rl.setPrompt(CONTINUATION_PROMPT);
+        while (true) {
+          const next = await rl.question('');
+          continued += '\n' + next;
+          if (!next.endsWith('\\')) break;
+          continued = continued.slice(0, -1);
+          rl.setPrompt(CONTINUATION_PROMPT);
+        }
+        input = continued;
+      }
 
       const trimmed = input.trim();
       if (!trimmed) continue;
+
+      pushHistory(trimmed);
 
       if (isExitCommand(trimmed)) {
         console.log(chalk.gray('  Goodbye.'));

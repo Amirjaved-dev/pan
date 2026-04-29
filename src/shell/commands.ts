@@ -3,6 +3,7 @@ import { listAgents } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
 import { doctorCommand } from '../commands/doctor.js';
 import { cmdToolsList, cmdToolsSearch } from '../commands/tools.js';
+import { cmdNetworkStatus } from '../commands/network.js';
 
 export interface ShellContext {
   agentName: string;
@@ -36,6 +37,10 @@ const commands: Record<string, { fn: ShellCommand; description: string }> = {
   tools: {
     fn: async (args: string, ctx) => await cmdTools({ args, ctx }),
     description: 'List or search tools',
+  },
+  network: {
+    fn: () => cmdNetworkStatus(),
+    description: 'Show AXL network status',
   },
   exit: {
     fn: () => { process.exit(0); },
