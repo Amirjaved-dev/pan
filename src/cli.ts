@@ -7,6 +7,7 @@ import { createAskCommand } from './commands/ask.js';
 import { doctorCommand } from './commands/doctor.js';
 import { createIdentityCommand } from './commands/identity.js';
 import { initCommand } from './commands/init.js';
+import { startRepl } from './shell/repl.js';
 
 const program = new Command();
 
@@ -22,6 +23,10 @@ program.command('init').description('Initialize Pan Agents configuration').actio
 program.addCommand(createAgentCommand());
 program.addCommand(createIdentityCommand());
 program.addCommand(createAskCommand());
+
+program.action(async () => {
+  await startRepl();
+});
 
 program.parseAsync().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
