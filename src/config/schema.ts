@@ -12,7 +12,7 @@ export const panConfigSchema = z.object({
     rpcUrl: z.string().url().default('https://sepolia.drpc.org'),
   }),
   sandbox: z.object({
-    allowUnsafeNodeVmFallback: z.literal(false).default(false),
+    allowUnsafeNodeVmFallback: z.boolean().default(false),
   }),
 });
 

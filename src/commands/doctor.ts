@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import { createRequire } from 'node:module';
 import { config as loadEnv } from 'dotenv';
 import { loadConfig } from '../config/load-config.js';
 import { detectEnsName } from '../identity/ens.js';
@@ -74,6 +75,31 @@ async function checkEnsAutoDetect(rpcUrl: string): Promise<Check> {
   }
 }
 
+async function checkSandbox(allowUnsafeNodeVmFallback: boolean): Promise<Check> {
+  if (allowUnsafeNodeVmFallback) {
+    return {
+      name: 'Tool sandbox',
+      ok: true,
+      detail: 'unsafe Node vm fallback enabled for local development',
+    };
+  }
+
+  try {
+    createRequire(import.meta.url)('isolated-vm');
+    return {
+      name: 'Tool sandbox',
+      ok: true,
+      detail: 'isolated-vm available',
+    };
+  } catch (error) {
+    return {
+      name: 'Tool sandbox',
+      ok: false,
+      detail: 'isolated-vm unavailable; run pnpm approve-builds and rebuild, or set sandbox.allowUnsafeNodeVmFallback=true for dev',
+    };
+  }
+}
+
 function printCheck(check: Check): void {
   const icon = check.ok ? chalk.green('PASS') : chalk.red('FAIL');
   console.log(`${icon} ${check.name}: ${check.detail}`);
@@ -84,10 +110,12 @@ export async function doctorCommand(): Promise<void> {
 
   let axlPort = 9002;
   let rpcUrl = process.env.SEPOLIA_RPC_URL ?? 'https://sepolia.drpc.org';
+  let allowUnsafeNodeVmFallback = false;
   try {
     const config = await loadConfig();
     axlPort = config.axl.port;
     rpcUrl = process.env.SEPOLIA_RPC_URL ?? config.ens.rpcUrl;
+    allowUnsafeNodeVmFallback = config.sandbox.allowUnsafeNodeVmFallback;
     printCheck({ name: 'Pan config', ok: true, detail: '.pan-agents/config.json loaded' });
   } catch (error) {
     printCheck({ name: 'Pan config', ok: false, detail: 'run pan init' });
@@ -98,6 +126,7 @@ export async function doctorCommand(): Promise<void> {
     envCheck('ENS private key', process.env.ENS_PRIVATE_KEY),
     envCheck('Sepolia RPC URL', process.env.SEPOLIA_RPC_URL),
     await checkEnsAutoDetect(rpcUrl),
+    await checkSandbox(allowUnsafeNodeVmFallback),
     await checkAxl(axlPort),
   ];
 

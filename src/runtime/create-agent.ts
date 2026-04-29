@@ -4,6 +4,7 @@ import { loadAgent } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
 import { getAgentExperiencePath, getAgentRegistryPath } from '../config/paths.js';
 import { createEnsIdentity, requireEnv } from '../identity/ens.js';
+import { patchZeroAgentToolGeneration } from './patch-zero-agent.js';
 import { logAgentStep } from './step-logger.js';
 
 export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAgent> {
@@ -20,6 +21,8 @@ export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAg
     privateKey: ensPrivateKey,
     rpcUrl,
   });
+
+  patchZeroAgentToolGeneration();
 
   const runtime = new SelfEvolvingAgent({
     name: agent.name,
