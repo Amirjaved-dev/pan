@@ -7,6 +7,7 @@ import { createAskCommand } from './commands/ask.js';
 import { doctorCommand } from './commands/doctor.js';
 import { createIdentityCommand } from './commands/identity.js';
 import { initCommand } from './commands/init.js';
+import { createToolsCommand } from './commands/tools.js';
 import { startRepl } from './shell/repl.js';
 
 const program = new Command();
@@ -23,6 +24,7 @@ program.command('init').description('Initialize Pan Agents configuration').actio
 program.addCommand(createAgentCommand());
 program.addCommand(createIdentityCommand());
 program.addCommand(createAskCommand());
+program.addCommand(createToolsCommand());
 
 program.action(async () => {
   await startRepl();

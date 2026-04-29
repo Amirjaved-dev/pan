@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { listAgents } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
 import { doctorCommand } from '../commands/doctor.js';
+import { cmdToolsList, cmdToolsSearch } from '../commands/tools.js';
 
 export interface ShellContext {
   agentName: string;
@@ -31,6 +32,10 @@ const commands: Record<string, { fn: ShellCommand; description: string }> = {
   clear: {
     fn: () => { void process.stdout.write('\x1Bc'); },
     description: 'Clear terminal',
+  },
+  tools: {
+    fn: async (args: string, ctx) => await cmdTools({ args, ctx }),
+    description: 'List or search tools',
   },
   exit: {
     fn: () => { process.exit(0); },
@@ -93,6 +98,14 @@ async function cmdStatus(ctx: ShellContext): Promise<void> {
   console.log(`  ENS:        ${config.ens.enabled ? chalk.green('enabled') : chalk.red('disabled')}`);
   console.log(`  Agents:      ${chalk.gray(String(agents.length))}`);
   console.log();
+}
+
+async function cmdTools({ args, ctx }: { args: string; ctx: ShellContext }): Promise<void> {
+  if (!args.trim()) {
+    await cmdToolsList({ agent: ctx.agentName });
+    return;
+  }
+  await cmdToolsSearch(args, { agent: ctx.agentName });
 }
 
 export function getShellCommand(input: string): { command: ShellCommand; args: string } | null {
