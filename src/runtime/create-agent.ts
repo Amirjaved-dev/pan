@@ -37,6 +37,8 @@ export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAg
     registryPath: getAgentRegistryPath(agent.name),
     experienceMemoryPath: getAgentExperiencePath(agent.name),
     allowUnsafeNodeVmFallback: config.sandbox.allowUnsafeNodeVmFallback,
+    evolutionTimeoutMs: 180_000,
+    testCaseTimeoutMs: 15_000,
   });
 
   runtime.on('step', logAgentStep);

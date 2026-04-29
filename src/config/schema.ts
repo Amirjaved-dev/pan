@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const panConfigSchema = z.object({
-  defaultAgent: z.string().min(1).default('main-agent'),
+  defaultAgent: z.string().min(1).default('auto-agent'),
   storageMode: z.literal('zero-g').default('zero-g'),
   axl: z.object({
     enabled: z.literal(true).default(true),
@@ -19,7 +19,7 @@ export const panConfigSchema = z.object({
 export type PanConfig = z.infer<typeof panConfigSchema>;
 
 export const defaultPanConfig: PanConfig = panConfigSchema.parse({
-  defaultAgent: 'main-agent',
+  defaultAgent: 'auto-agent',
   storageMode: 'zero-g',
   axl: {
     enabled: true,

@@ -3,6 +3,7 @@ import { ToolGenerator, type Tool } from '@zero-agents/core';
 type ToolPayload = Pick<Tool, 'name' | 'description' | 'code' | 'schema' | 'tags'>;
 
 type PatchableToolGenerator = {
+  createMessages(taskDescription: string): Array<{ role: string; content: string }>;
   parseGeneratedTool(responseText: string): ToolPayload;
 };
 
@@ -79,7 +80,30 @@ export function patchZeroAgentToolGeneration(): void {
   }
 
   const prototype = ToolGenerator.prototype as unknown as PatchableToolGenerator;
+  const originalCreateMessages = prototype.createMessages;
   const originalParse = prototype.parseGeneratedTool;
+
+  prototype.createMessages = function createMessages(taskDescription: string): Array<{ role: string; content: string }> {
+    const messages = originalCreateMessages.call(this, taskDescription);
+    return messages.map((message) => {
+      if (message.role !== 'system') {
+        return message;
+      }
+
+      return {
+        ...message,
+        content: `${message.content}
+
+Runtime notes:
+- Generated tools run in a secure isolated-vm sandbox.
+- Network access is available through standard fetch(url, options).
+- Use public HTTPS JSON APIs that do not require API keys when live external data is needed.
+- Always check response.ok, parse JSON defensively, and return structured JSON errors instead of throwing on normal API failures.
+- If an external-data task has a well-known public source, prefer stable endpoints over search-result pages or HTML scraping.
+- Do not use Node-only APIs such as require, process, fs, child_process, http, https, or net.`
+      };
+    });
+  };
 
   prototype.parseGeneratedTool = function parseGeneratedTool(responseText: string): ToolPayload {
     try {
