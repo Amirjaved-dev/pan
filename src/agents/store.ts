@@ -26,7 +26,13 @@ export async function listAgents(cwd = process.cwd()): Promise<AgentConfig[]> {
   try {
     const entries = await readdir(getAgentsDir(cwd), { withFileTypes: true });
     const agentNames = entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          entry.name.endsWith('.json') &&
+          !entry.name.endsWith('.registry.json') &&
+          !entry.name.endsWith('.experiences.json'),
+      )
       .map((entry) => basename(entry.name, '.json'))
       .sort();
 

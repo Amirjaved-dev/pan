@@ -97,9 +97,13 @@ export function patchZeroAgentToolGeneration(): void {
 Runtime notes:
 - Generated tools run in a secure isolated-vm sandbox.
 - Network access is available through standard fetch(url, options).
+- The tool is first sandbox-smoke-tested before evaluation, so it must run successfully with params={} and with natural-language params such as { query, task, terms, symbol, symbols }.
+- Treat params as optional. Derive safe defaults from the task description embedded in this prompt when params are missing.
 - Use public HTTPS JSON APIs that do not require API keys when live external data is needed.
-- Always check response.ok, parse JSON defensively, and return structured JSON errors instead of throwing on normal API failures.
+- Always check response.ok, parse JSON defensively, validate nested fields before reading them, and return structured JSON errors instead of throwing on normal API failures.
 - If an external-data task has a well-known public source, prefer stable endpoints over search-result pages or HTML scraping.
+- For cryptocurrency prices, CoinGecko's simple price endpoint is acceptable, but its ids parameter requires CoinGecko asset ids, not tickers. Use this mapping when relevant: btc -> bitcoin, eth -> ethereum, sol -> solana, ltc -> litecoin, doge -> dogecoin, xrp -> ripple. Never call ids=btc or read data.btc.usd; call ids=bitcoin and read data.bitcoin.usd after verifying data.bitcoin exists.
+- If an expected API field is missing, return a structured error object instead of throwing during normal data validation. Throw only for programming errors.
 - Do not use Node-only APIs such as require, process, fs, child_process, http, https, or net.`
       };
     });

@@ -4,6 +4,7 @@ import { ToolRegistry } from '@zero-agents/core';
 import { config as loadEnv } from 'dotenv';
 import { requireEnv } from '../identity/ens.js';
 import { loadAgent } from '../agents/store.js';
+import { loadConfig } from '../config/load-config.js';
 import { getAgentRegistryPath } from '../config/paths.js';
 
 function createRegistry(agentName: string): ToolRegistry {
@@ -16,7 +17,8 @@ function createRegistry(agentName: string): ToolRegistry {
 }
 
 export async function cmdToolsList(options: { agent?: string }): Promise<void> {
-  const agent = options.agent ?? 'auto-agent';
+  const config = await loadConfig();
+  const agent = options.agent ?? config.defaultAgent;
   await loadAgent(agent);
   const registry = createRegistry(agent);
 
@@ -44,7 +46,8 @@ export async function cmdToolsList(options: { agent?: string }): Promise<void> {
 }
 
 async function cmdToolsShow(name: string, options: { agent?: string }): Promise<void> {
-  const agent = options.agent ?? 'auto-agent';
+  const config = await loadConfig();
+  const agent = options.agent ?? config.defaultAgent;
   await loadAgent(agent);
   const registry = createRegistry(agent);
 
@@ -70,7 +73,8 @@ async function cmdToolsShow(name: string, options: { agent?: string }): Promise<
 }
 
 export async function cmdToolsSearch(query: string, options: { agent?: string }): Promise<void> {
-  const agent = options.agent ?? 'auto-agent';
+  const config = await loadConfig();
+  const agent = options.agent ?? config.defaultAgent;
   await loadAgent(agent);
   const registry = createRegistry(agent);
 

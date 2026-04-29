@@ -18,4 +18,12 @@ const stepColors: Record<AgentStepEvent['type'], (value: string) => string> = {
 export function logAgentStep(event: AgentStepEvent): void {
   const color = stepColors[event.type];
   console.log(`${color(`[${event.type}]`)} ${event.message}`);
+
+  if (process.env.PAN_DEBUG_TOOLS === '1' && event.type === 'sandboxing') {
+    const tool = event.data && typeof event.data === 'object' && 'tool' in event.data ? event.data.tool : null;
+    if (tool && typeof tool === 'object' && 'code' in tool && typeof tool.code === 'string') {
+      console.log(chalk.gray('[debug:tool-code]'));
+      console.log(tool.code);
+    }
+  }
 }

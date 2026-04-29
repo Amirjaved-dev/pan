@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import * as readline from 'node:readline/promises';
 import chalk from 'chalk';
 import { runTask } from '../runtime/run-task.js';
@@ -6,14 +7,11 @@ import type { ShellContext } from './commands.js';
 import { getShellCommand, isExitCommand } from './commands.js';
 import { buildPrompt, printWelcome } from './prompt.js';
 
-const MAX_HISTORY = 50;
 const CONTINUATION_PROMPT = chalk.dim('... ');
 
 export async function startRepl(): Promise<void> {
   const config = await loadConfig();
   let currentAgent = config.defaultAgent;
-  const history: string[] = [];
-  let historyIdx = -1;
 
   const ctx: ShellContext = {
     get agentName() {
@@ -24,6 +22,36 @@ export async function startRepl(): Promise<void> {
     },
     exit: () => process.exit(0),
   };
+
+  async function handleInput(input: string): Promise<boolean> {
+    const trimmed = input.trim();
+    if (!trimmed) return true;
+
+    if (isExitCommand(trimmed)) {
+      console.log(chalk.gray('  Goodbye.'));
+      return false;
+    }
+
+    const shellCmd = getShellCommand(trimmed);
+    if (shellCmd) {
+      await shellCmd.command(shellCmd.args, ctx);
+      return true;
+    }
+
+    console.log();
+    await runTask(trimmed, currentAgent);
+    console.log();
+    return true;
+  }
+
+  if (!process.stdin.isTTY) {
+    const input = readFileSync(0, 'utf8');
+    for (const line of input.split(/\r?\n/)) {
+      const shouldContinue = await handleInput(line);
+      if (!shouldContinue) break;
+    }
+    return;
+  }
 
   printWelcome(currentAgent, '0.1.0');
 
@@ -38,14 +66,6 @@ export async function startRepl(): Promise<void> {
     console.log(chalk.yellow('\n  ^C'));
     rl.prompt();
   });
-
-  function pushHistory(line: string): void {
-    if (line && line !== history[history.length - 1]) {
-      history.push(line);
-      if (history.length > MAX_HISTORY) history.shift();
-    }
-    historyIdx = -1;
-  }
 
   while (true) {
     try {
@@ -65,28 +85,17 @@ export async function startRepl(): Promise<void> {
         input = continued;
       }
 
-      const trimmed = input.trim();
-      if (!trimmed) continue;
-
-      pushHistory(trimmed);
-
-      if (isExitCommand(trimmed)) {
-        console.log(chalk.gray('  Goodbye.'));
+      const shouldContinue = await handleInput(input);
+      if (!shouldContinue) {
         rl.close();
         return;
       }
-
-      const shellCmd = getShellCommand(trimmed);
-      if (shellCmd) {
-        await shellCmd.command(shellCmd.args, ctx);
-        continue;
-      }
-
-      console.log();
-      await runTask(trimmed, currentAgent);
-      console.log();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (/readline was closed|input stream closed/i.test(message)) {
+        rl.close();
+        return;
+      }
       if (message.includes('abort') || message.includes('SIGINT')) {
         console.log(chalk.yellow('\n  Task cancelled.'));
         continue;

@@ -33,6 +33,7 @@ type PatchableEnsIdentityManager = {
     waitForTransactionReceipt(input: { hash: `0x${string}` }): Promise<unknown>;
   };
   walletClient: unknown;
+  getProfile(): Promise<AgentProfile | null>;
 };
 
 type EnsResolverContract = {
@@ -69,7 +70,12 @@ export function patchEnsSequentialWrites(): void {
     return;
   }
 
-  ENSIdentityManager.prototype.setAgentProfile = async function setAgentProfile(profile: AgentProfile): Promise<void> {
+  const prototype = ENSIdentityManager.prototype as unknown as {
+    setAgentProfile(profile: AgentProfile): Promise<void>;
+    setAXLPeerId(peerId: string): Promise<void>;
+  };
+
+  prototype.setAgentProfile = async function setAgentProfile(profile: AgentProfile): Promise<void> {
     const manager = this as unknown as PatchableEnsIdentityManager;
     const resolverAddress = await manager.publicClient.getEnsResolver({ name: normalize(manager.ensName) });
 
@@ -96,6 +102,18 @@ export function patchEnsSequentialWrites(): void {
       const hash = await resolver.write.setText([node, record.key, record.value]);
       await manager.publicClient.waitForTransactionReceipt({ hash });
     }
+  };
+
+  prototype.setAXLPeerId = async function setAXLPeerId(peerId: string): Promise<void> {
+    const manager = this as unknown as PatchableEnsIdentityManager;
+    const profile = await manager.getProfile();
+    await prototype.setAgentProfile.call(this, {
+      description: profile?.description ?? '',
+      capabilities: profile?.capabilities ?? [],
+      toolRegistryHash: profile?.toolRegistryHash ?? '',
+      axlPeerId: peerId,
+      url: profile?.url,
+    });
   };
 
   isPatched = true;

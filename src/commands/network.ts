@@ -34,7 +34,8 @@ export async function cmdNetworkStatus(): Promise<void> {
     const topologyRes = await fetch(`http://localhost:${config.axl.port}/topology`);
     if (topologyRes.ok) {
       const topology = await topologyRes.json() as Record<string, unknown>;
-      const peers = (topology.peers ?? []) as Array<{ peerId?: string }>;
+      const rawPeers = topology.peers;
+      const peers = Array.isArray(rawPeers) ? rawPeers as Array<{ peerId?: string }> : [];
       console.log(`  Peers:    ${chalk.green(String(peers.length))}`);
       for (const p of peers) {
         if (p.peerId) console.log(chalk.gray(`    - ${p.peerId}`));

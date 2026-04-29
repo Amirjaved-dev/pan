@@ -5,6 +5,7 @@ import { loadConfig } from '../config/load-config.js';
 import { getAgentExperiencePath, getAgentRegistryPath } from '../config/paths.js';
 import { createEnsIdentity, requireEnv } from '../identity/ens.js';
 import { patchEnsSequentialWrites } from './patch-ens.js';
+import { patchToolSandboxDefaults } from './patch-sandbox.js';
 import { patchZeroAgentToolGeneration } from './patch-zero-agent.js';
 import { logAgentStep } from './step-logger.js';
 
@@ -18,6 +19,7 @@ export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAg
   const ensPrivateKey = requireEnv('ENS_PRIVATE_KEY');
   const rpcUrl = process.env.SEPOLIA_RPC_URL ?? config.ens.rpcUrl;
   patchEnsSequentialWrites();
+  patchToolSandboxDefaults();
   const identity = await createEnsIdentity({
     ensName: agent.ensName,
     privateKey: ensPrivateKey,
