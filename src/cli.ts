@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import { createAgentCommand } from './commands/agent.js';
 import { doctorCommand } from './commands/doctor.js';
+import { createIdentityCommand } from './commands/identity.js';
 import { initCommand } from './commands/init.js';
 
 const program = new Command();
@@ -17,6 +18,7 @@ program.command('doctor').description('Check required Pan Agents infrastructure'
 program.command('init').description('Initialize Pan Agents configuration').action(initCommand);
 
 program.addCommand(createAgentCommand());
+program.addCommand(createIdentityCommand());
 
 program
   .command('ask')
