@@ -1,0 +1,32 @@
+{
+  "name": "pan-agents",
+  "version": "0.1.0",
+  "description": "Claude Code-style CLI for autonomous agent workflows powered by 0G, ENS, and Gensyn AXL.",
+  "type": "module",
+  "bin": {
+    "pan": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@zero-agents/core": "^0.1.1",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "ora": "^8.1.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3",
+    "vitest": "^2.0.4"
+  },
+  "license": "MIT"
+}
