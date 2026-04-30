@@ -124,11 +124,13 @@ export async function doctorCommand(): Promise<void> {
   let axlPort = 9002;
   let rpcUrl = process.env.SEPOLIA_RPC_URL ?? 'https://sepolia.drpc.org';
   let allowUnsafeNodeVmFallback = false;
+  let decisionProvider: 'openrouter' | 'zero-g' = 'openrouter';
   try {
     const config = await loadConfig();
     axlPort = config.axl.port;
     rpcUrl = process.env.SEPOLIA_RPC_URL ?? config.ens.rpcUrl;
     allowUnsafeNodeVmFallback = config.sandbox.allowUnsafeNodeVmFallback;
+    decisionProvider = config.decision.provider;
     printCheck({ name: 'Pan config', ok: true, detail: '.pan-agents/config.json loaded' });
   } catch (error) {
     printCheck({ name: 'Pan config', ok: false, detail: 'run pan init' });
@@ -137,6 +139,9 @@ export async function doctorCommand(): Promise<void> {
   const checks: Check[] = [
     checkNodeRuntime(),
     envCheck('0G private key', process.env.ZERO_G_PRIVATE_KEY),
+    decisionProvider === 'openrouter'
+      ? envCheck('OpenRouter API key', process.env.OPENROUTER_API_KEY)
+      : envCheck('Decision provider 0G key', process.env.ZERO_G_PRIVATE_KEY),
     envCheck('ENS private key', process.env.ENS_PRIVATE_KEY),
     envCheck('Sepolia RPC URL', process.env.SEPOLIA_RPC_URL),
     await checkEnsAutoDetect(rpcUrl),

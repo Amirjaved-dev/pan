@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
 import * as readline from 'node:readline/promises';
 import chalk from 'chalk';
-import { runTask } from '../runtime/run-task.js';
+import { decideAction } from '../brain/decide-action.js';
 import { loadConfig } from '../config/load-config.js';
 import type { ShellContext } from './commands.js';
 import { getShellCommand, isExitCommand } from './commands.js';
+import { executeDecision } from './execute-decision.js';
 import { buildPrompt, printWelcome } from './prompt.js';
 
 const CONTINUATION_PROMPT = chalk.dim('... ');
@@ -12,6 +13,7 @@ const CONTINUATION_PROMPT = chalk.dim('... ');
 export async function startRepl(): Promise<void> {
   const config = await loadConfig();
   let currentAgent = config.defaultAgent;
+  const recentMessages: string[] = [];
 
   const ctx: ShellContext = {
     get agentName() {
@@ -38,9 +40,15 @@ export async function startRepl(): Promise<void> {
       return true;
     }
 
-    console.log();
-    await runTask(trimmed, currentAgent);
-    console.log();
+    const decision = await decideAction(trimmed, {
+      agentName: currentAgent,
+      cwd: process.cwd(),
+      recentMessages: recentMessages.slice(-6),
+    });
+    await executeDecision(trimmed, decision, ctx);
+    recentMessages.push(`user: ${trimmed}`);
+    recentMessages.push(`decision: ${decision.intent}/${decision.action}`);
+    if (recentMessages.length > 12) recentMessages.splice(0, recentMessages.length - 12);
     return true;
   }
 
@@ -53,7 +61,13 @@ export async function startRepl(): Promise<void> {
     return;
   }
 
-  printWelcome(currentAgent, '0.1.0');
+  printWelcome({
+    agentName: currentAgent,
+    version: '0.1.0',
+    cwd: process.cwd(),
+    decisionProvider: config.decision.provider,
+    decisionModel: config.decision.openRouterModel,
+  });
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -69,18 +83,15 @@ export async function startRepl(): Promise<void> {
 
   while (true) {
     try {
-      rl.setPrompt(buildPrompt(currentAgent));
-      let input = await rl.question('');
+      let input = await rl.question(buildPrompt(currentAgent));
 
       if (input.endsWith('\\')) {
         let continued = input.slice(0, -1);
-        rl.setPrompt(CONTINUATION_PROMPT);
         while (true) {
-          const next = await rl.question('');
+          const next = await rl.question(CONTINUATION_PROMPT);
           continued += '\n' + next;
           if (!next.endsWith('\\')) break;
           continued = continued.slice(0, -1);
-          rl.setPrompt(CONTINUATION_PROMPT);
         }
         input = continued;
       }

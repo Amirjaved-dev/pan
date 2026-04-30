@@ -109,6 +109,16 @@ Show AXL network status:
 .\pan.ps1 network status
 ```
 
+Show or change the intent decision model:
+
+```powershell
+.\pan.ps1 model
+.\pan.ps1 model openrouter tencent/hy3-preview:free
+.\pan.ps1 model zero-g
+```
+
+OpenRouter mode requires `OPENROUTER_API_KEY`. 0G mode uses `ZERO_G_PRIVATE_KEY`.
+
 ## Why Use `pan.ps1`?
 
 Your system Node.js is newer than `isolated-vm` supports. Pan Agents needs Node.js 22 or 24 so the secure sandbox can load correctly.

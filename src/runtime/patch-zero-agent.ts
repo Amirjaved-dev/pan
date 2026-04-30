@@ -1,4 +1,5 @@
 import { ToolGenerator, type Tool } from '@zero-agents/core';
+import { PAN_SYSTEM_PROMPT } from './system-prompt.js';
 
 type ToolPayload = Pick<Tool, 'name' | 'description' | 'code' | 'schema' | 'tags'>;
 
@@ -93,6 +94,9 @@ export function patchZeroAgentToolGeneration(): void {
       return {
         ...message,
         content: `${message.content}
+
+Pan system prompt:
+${PAN_SYSTEM_PROMPT}
 
 Runtime notes:
 - Generated tools run in a secure isolated-vm sandbox.

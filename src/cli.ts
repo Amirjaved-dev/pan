@@ -9,6 +9,8 @@ import { createIdentityCommand } from './commands/identity.js';
 import { initCommand } from './commands/init.js';
 import { createToolsCommand } from './commands/tools.js';
 import { createNetworkCommand } from './commands/network.js';
+import { createModelCommand } from './commands/model.js';
+import { createEvalCommand } from './commands/eval.js';
 import { startRepl } from './shell/repl.js';
 
 const program = new Command();
@@ -27,6 +29,8 @@ program.addCommand(createIdentityCommand());
 program.addCommand(createAskCommand());
 program.addCommand(createToolsCommand());
 program.addCommand(createNetworkCommand());
+program.addCommand(createModelCommand());
+program.addCommand(createEvalCommand());
 
 program.action(async () => {
   await startRepl();

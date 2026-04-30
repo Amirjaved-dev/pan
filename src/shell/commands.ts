@@ -1,10 +1,8 @@
 import chalk from 'chalk';
-import { listAgents } from '../agents/store.js';
-import { loadConfig } from '../config/load-config.js';
 import { doctorCommand } from '../commands/doctor.js';
+import { initCommand } from '../commands/init.js';
 import { cmdToolsList, cmdToolsSearch } from '../commands/tools.js';
-import { cmdNetworkStatus } from '../commands/network.js';
-import { classifyShellIntent } from './intent.js';
+import { executeSlashAgents, executeSlashNetwork, executeSlashStatus, executeSlashSwitchAgent } from './execute-decision.js';
 
 export interface ShellContext {
   agentName: string;
@@ -20,16 +18,20 @@ const commands: Record<string, { fn: ShellCommand; description: string }> = {
     description: 'Show available commands',
   },
   agent: {
-    fn: async (args: string, ctx) => await cmdAgent(args, ctx),
+    fn: async (args: string, ctx) => args.trim() ? await executeSlashSwitchAgent(args.trim(), ctx) : await executeSlashAgents(ctx),
     description: 'Switch or list agents',
   },
   status: {
-    fn: async (_args: string, ctx) => await cmdStatus(ctx),
+    fn: async (_args: string, ctx) => await executeSlashStatus(ctx),
     description: 'Show current agent and config',
   },
   doctor: {
     fn: () => doctorCommand(),
     description: 'Run infrastructure checks',
+  },
+  init: {
+    fn: () => initCommand(),
+    description: 'Create local Pan config',
   },
   clear: {
     fn: () => { void process.stdout.write('\x1Bc'); },
@@ -40,16 +42,20 @@ const commands: Record<string, { fn: ShellCommand; description: string }> = {
     description: 'List or search tools',
   },
   network: {
-    fn: () => cmdNetworkStatus(),
+    fn: () => executeSlashNetwork(),
     description: 'Show AXL network status',
   },
-  smalltalk: {
-    fn: () => printSmalltalk(),
-    description: 'Explain what Pan can do',
-  },
-  clarify: {
-    fn: () => printClarification(),
-    description: 'Ask for a clearer task',
+  model: {
+    fn: async () => {
+      const { loadConfig } = await import('../config/load-config.js');
+      const config = await loadConfig();
+      console.log();
+      console.log(chalk.bold('  Decision Model:'));
+      console.log(`  Provider: ${chalk.green(config.decision.provider)}`);
+      if (config.decision.provider === 'openrouter') console.log(`  Model:    ${chalk.cyan(config.decision.openRouterModel)}`);
+      console.log();
+    },
+    description: 'Show decision model provider',
   },
   exit: {
     fn: () => { process.exit(0); },
@@ -59,72 +65,13 @@ const commands: Record<string, { fn: ShellCommand; description: string }> = {
 
 function printHelp(): void {
   console.log();
-  console.log(chalk.bold('  Slash Commands:'));
+  console.log(chalk.bold('  Commands'));
   console.log();
   for (const [name, { description }] of Object.entries(commands)) {
-    console.log('  ' + chalk.cyan(`/${name.padEnd(12)}`) + ' ' + description);
+    console.log(`  ${chalk.hex('#de7a55')(`/${name.padEnd(10)}`)} ${chalk.gray(description)}`);
   }
   console.log();
-  console.log(chalk.gray('  Anything else is sent to your agent as a task.'));
-  console.log();
-}
-
-function printSmalltalk(): void {
-  console.log();
-  console.log(chalk.gray('  Tell me a task, or ask for /help, /tools, /status, /agent, or /network.'));
-  console.log(chalk.gray('  Example: find the price of eth'));
-  console.log();
-}
-
-function printClarification(): void {
-  console.log();
-  console.log(chalk.yellow('  I need a clearer task before generating a tool.'));
-  console.log(chalk.gray('  Try: /tools, /status, or a concrete task like "find the price of eth".'));
-  console.log();
-}
-
-async function cmdAgent(args: string, ctx: ShellContext): Promise<void> {
-  if (!args.trim()) {
-    const agents = await listAgents();
-    if (agents.length === 0) {
-      console.log(chalk.yellow('  No agents found. Run pan agent create <name>.'));
-      return;
-    }
-    console.log();
-    console.log(chalk.bold('  Agents:'));
-    for (const a of agents) {
-      const current = a.name === ctx.agentName ? chalk.green(' (active)') : '';
-      console.log(`  ${chalk.cyan(a.name)}${current}`);
-      if (a.description) console.log(chalk.gray(`    ${a.description}`));
-    }
-    console.log();
-    return;
-  }
-
-  const target = args.trim();
-  const agents = await listAgents();
-  const exists = agents.some((a) => a.name === target);
-
-  if (!exists) {
-    console.log(chalk.red(`  Agent "${target}" not found.`));
-    return;
-  }
-
-  ctx.setAgent(target);
-  console.log(chalk.green(`  Switched to agent: ${target}`));
-}
-
-async function cmdStatus(ctx: ShellContext): Promise<void> {
-  const config = await loadConfig();
-  const agents = await listAgents();
-
-  console.log();
-  console.log(chalk.bold('  Pan Status:'));
-  console.log(`  Agent:       ${chalk.green(ctx.agentName)}`);
-  console.log(`  Storage:     ${chalk.cyan(config.storageMode)}`);
-  console.log(`  AXL:        ${config.axl.enabled ? chalk.green(`enabled (port ${config.axl.port})`) : chalk.red('disabled')}`);
-  console.log(`  ENS:        ${config.ens.enabled ? chalk.green('enabled') : chalk.red('disabled')}`);
-  console.log(`  Agents:      ${chalk.gray(String(agents.length))}`);
+  console.log(chalk.gray('  Ask a question directly, or describe a concrete task for the active agent.'));
   console.log();
 }
 
@@ -139,7 +86,7 @@ async function cmdTools({ args, ctx }: { args: string; ctx: ShellContext }): Pro
 export function getShellCommand(input: string): { command: ShellCommand; args: string } | null {
   const trimmed = input.trim();
   if (!trimmed.startsWith('/')) {
-    return getNaturalShellCommand(trimmed);
+    return null;
   }
 
   const spaceIdx = trimmed.indexOf(' ');
@@ -150,29 +97,6 @@ export function getShellCommand(input: string): { command: ShellCommand; args: s
   if (!entry) return null;
 
   return { command: entry.fn, args };
-}
-
-function getNaturalShellCommand(input: string): { command: ShellCommand; args: string } | null {
-  const intent = classifyShellIntent(input);
-
-  switch (intent.type) {
-    case 'help':
-      return { command: commands.help.fn, args: '' };
-    case 'status':
-      return { command: commands.status.fn, args: '' };
-    case 'tools':
-      return { command: commands.tools.fn, args: intent.query ?? '' };
-    case 'agents':
-      return { command: commands.agent.fn, args: '' };
-    case 'network':
-      return { command: commands.network.fn, args: '' };
-    case 'smalltalk':
-      return { command: commands.smalltalk.fn, args: '' };
-    case 'clarify':
-      return { command: commands.clarify.fn, args: intent.reason };
-    case 'agent_task':
-      return null;
-  }
 }
 
 export function isExitCommand(input: string): boolean {

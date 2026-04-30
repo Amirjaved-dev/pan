@@ -14,6 +14,13 @@ export const panConfigSchema = z.object({
   sandbox: z.object({
     allowUnsafeNodeVmFallback: z.boolean().default(false),
   }),
+  decision: z.object({
+    provider: z.enum(['openrouter', 'zero-g']).default('openrouter'),
+    openRouterModel: z.string().min(1).default('tencent/hy3-preview:free'),
+  }).default({
+    provider: 'openrouter',
+    openRouterModel: 'tencent/hy3-preview:free',
+  }),
 });
 
 export type PanConfig = z.infer<typeof panConfigSchema>;
@@ -31,5 +38,9 @@ export const defaultPanConfig: PanConfig = panConfigSchema.parse({
   },
   sandbox: {
     allowUnsafeNodeVmFallback: false,
+  },
+  decision: {
+    provider: 'openrouter',
+    openRouterModel: 'tencent/hy3-preview:free',
   },
 });
