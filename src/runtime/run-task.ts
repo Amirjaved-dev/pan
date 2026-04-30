@@ -4,6 +4,7 @@ import { createPanAgent } from './create-agent.js';
 import { withQuietConsole, writeLine } from './quiet-console.js';
 import { PAN_SYSTEM_PROMPT } from './system-prompt.js';
 import { summarizeTraceOutput, writeTrace } from './trace.js';
+import { verifyTaskResult } from './result-verifier.js';
 
 function formatOutput(output: unknown): string {
   if (typeof output === 'string') {
@@ -69,6 +70,7 @@ export async function runTask(task: string, agentName?: string): Promise<TaskRes
 
   try {
     const result = await withQuietConsole(() => agent.run(createTaskRequest(task)));
+    const verification = verifyTaskResult(task, result);
     await writeTrace({
       type: 'task_result',
       agentName,
@@ -80,10 +82,14 @@ export async function runTask(task: string, agentName?: string): Promise<TaskRes
       qualityScore: result.reflection?.qualityScore,
       durationMs: Date.now() - startedAt,
       outputSummary: summarizeTraceOutput(result.output),
+      metadata: { verification },
     }).catch(() => undefined);
 
     writeLine(chalk.green('[result]'));
     writeLine(formatOutput(result.output));
+    if (!verification.ok) {
+      writeLine(chalk.yellow(`[verify] ${verification.reason ?? 'result failed verification'}`));
+    }
 
     const strategy = formatStrategy(result);
     if (strategy) {
