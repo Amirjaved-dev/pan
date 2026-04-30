@@ -35,6 +35,10 @@ function shouldShowStep(event: AgentStepEvent): boolean {
     return true;
   }
 
+  if (event.type === 'error' && event.message.startsWith('AXL initialization failed')) {
+    return false;
+  }
+
   return event.type !== 'reflecting' && !(event.type === 'strategy' && event.message.startsWith('Reason:'));
 }
 
