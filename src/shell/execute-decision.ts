@@ -3,6 +3,8 @@ import { listAgents } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
 import { cmdNetworkStatus } from '../commands/network.js';
 import { cmdToolsList, cmdToolsSearch } from '../commands/tools.js';
+import { isCryptoMarketTask, runCryptoMarketTask } from '../runtime/crypto-market.js';
+import { checkExecutionGate } from '../runtime/execution-gate.js';
 import { runTask } from '../runtime/run-task.js';
 import { writeTrace } from '../runtime/trace.js';
 import type { AgentDecision } from '../brain/action-schema.js';
@@ -126,6 +128,14 @@ export async function executeDecision(input: string, decision: AgentDecision, ct
       return;
     case 'use_or_create_tool': {
       const task = decision.task ?? input;
+      const gate = checkExecutionGate(task);
+      if (!gate.allowed) {
+        console.log();
+        printLine(gate.response);
+        console.log();
+        return;
+      }
+
       if (decision.confidence < MIN_EXECUTION_CONFIDENCE) {
         console.log();
         printLine('I need a more specific task.', 'yellow');
@@ -134,6 +144,12 @@ export async function executeDecision(input: string, decision: AgentDecision, ct
       }
 
       console.log();
+      if (isCryptoMarketTask(task)) {
+        await runCryptoMarketTask(task);
+        console.log();
+        return;
+      }
+
       await runTask(task, ctx.agentName);
       console.log();
       return;

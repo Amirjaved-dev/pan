@@ -22,7 +22,7 @@ function wordCount(input: string): number {
 function isIdentityOrCapabilityMessage(input: string): boolean {
   const text = normalize(input);
   return /\b(who are you|who are u|what are you|what are u|what is pan agents|your name|ur name)\b/.test(text) ||
-    /\b(what can you do|what can u do|what u can do|capabilities)\b/.test(text);
+    /\b(what can you do|what can u do|what u can do|what abilities|what ability|abilities you have|abilities u have|your abilities|ur abilities|capabilities|features|how can you help|how can u help)\b/.test(text);
 }
 
 function isPersonalKnowledgeQuestion(input: string): boolean {
@@ -33,7 +33,7 @@ function isPersonalKnowledgeQuestion(input: string): boolean {
 
 function isSimpleChat(input: string): boolean {
   const text = normalize(input);
-  return /\b(hi|hello|hey|yo|thanks|thank you|thx)\b/.test(text) && wordCount(input) <= 4;
+  return /\b(hi|hii|hy|hello|helo|hey|yo|sup|thanks|thank you|thx)\b/.test(text) && wordCount(input) <= 4;
 }
 
 function isVagueQuestion(input: string): boolean {

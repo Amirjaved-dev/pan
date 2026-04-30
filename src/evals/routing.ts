@@ -28,6 +28,28 @@ const CASES: RoutingEvalCase[] = [
     responseIncludes: 'I can help in three concrete ways',
   },
   {
+    name: 'abilities question answers directly',
+    input: 'what abilities u have',
+    action: 'respond_to_user',
+    intent: 'chat',
+    taskMustBeNull: true,
+    responseIncludes: 'I can help in three concrete ways',
+  },
+  {
+    name: 'greeting typo answers directly',
+    input: 'hy',
+    action: 'respond_to_user',
+    intent: 'chat',
+    taskMustBeNull: true,
+  },
+  {
+    name: 'casual greeting answers directly',
+    input: 'hii bro',
+    action: 'respond_to_user',
+    intent: 'chat',
+    taskMustBeNull: true,
+  },
+  {
     name: 'tool typo lists tools',
     input: 'what tool availble?',
     action: 'list_tools',

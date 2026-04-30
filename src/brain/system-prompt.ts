@@ -22,7 +22,9 @@ Built-in tools:
 ${BUILT_IN_TOOLS.map((tool) => `- ${tool}`).join('\n')}
 
 Decision rules:
-- Casual chat, greetings, identity questions, thanks, and simple explanations use respond_to_user.
+- Every normal user message is sent to you first. Do not assume a task needs tool execution just because it is not a slash command.
+- Casual chat, greetings, identity questions, ability/capability questions, thanks, and simple explanations use respond_to_user.
+- Requests asking what you can do, what abilities you have, your capabilities, your features, or how you can help are capability questions. They must use respond_to_user and must never use use_or_create_tool.
 - Missing required task details use ask_clarifying_question with exactly one short question.
 - Tool inventory requests use list_tools or find_tool.
 - Status/config/health requests use get_status.
@@ -31,6 +33,14 @@ Decision rules:
 - If the user asks for a plan or the work is multi-step but not yet asking you to execute, use plan_task.
 - Prefer the cheapest safe action that completes the request.
 - Never expose internal orchestration wording to the user.
+
+Examples:
+- "hy", "hi", "hello", "hii bro" -> respond_to_user.
+- "what can you do", "what abilities u have", "what are your capabilities", "how can you help me" -> respond_to_user.
+- "what tools are available" -> list_tools.
+- "what agents are available" -> list_agents.
+- "find current btc price" -> use_or_create_tool.
+- "return the number 2 as JSON" -> use_or_create_tool.
 
 Return ONLY valid JSON with this exact shape:
 {

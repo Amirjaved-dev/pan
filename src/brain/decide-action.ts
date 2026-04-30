@@ -40,7 +40,7 @@ function fallbackDecision(input: string): AgentDecision {
     };
   }
 
-  if (/\b(who are you|who are u|who r u|what are you|what can you do|what can u do|what u can do|hi|hello|hey|thanks|thank you)\b/i.test(lower)) {
+  if (/\b(who are you|who are u|who r u|what are you|what can you do|what can u do|what u can do|what abilities|what ability|abilities you have|abilities u have|your abilities|ur abilities|capabilities|features|how can you help|how can u help|hi|hii|hy|hello|helo|hey|yo|sup|thanks|thank you)\b/i.test(lower)) {
     return {
       intent: 'chat',
       action: 'respond_to_user',
@@ -182,8 +182,16 @@ export async function decideAction(input: string, context: DecisionContext, opti
       ? await createZeroGDecision(input, context)
       : await createOpenRouterDecision(input, context, config.decision.openRouterModel);
 
-    const decision = normalizeDecision(JSON.parse(extractJson(content))) ?? fallbackDecision(input);
-    return guardDecision(input, decision);
+    const decision = normalizeDecision(JSON.parse(extractJson(content)));
+    if (decision) {
+      if (decision.action === 'use_or_create_tool') {
+        const guarded = guardDecision(input, decision);
+        if (guarded.action !== 'use_or_create_tool') return guarded;
+      }
+      return decision;
+    }
+
+    return guardDecision(input, fallbackDecision(input));
   } catch {
     return guardDecision(input, fallbackDecision(input));
   }

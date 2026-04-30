@@ -1,12 +1,16 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
+import { runBuiltinEvals } from '../evals/builtins.js';
 import { runRoutingEvals } from '../evals/routing.js';
 
 export function createEvalCommand(): Command {
   return new Command('eval')
     .description('Run local Pan agent quality evals')
     .action(async () => {
-      const results = await runRoutingEvals();
+      const results = [
+        ...await runRoutingEvals(),
+        ...runBuiltinEvals(),
+      ];
       const failed = results.filter((result) => !result.passed);
 
       console.log(chalk.bold('\n  Pan Agent Evals'));
