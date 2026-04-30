@@ -25,6 +25,14 @@ export function getAgentRegistryPath(agentName: string, cwd = process.cwd()): st
   return join(getAgentsDir(cwd), `${agentName}.registry.json`);
 }
 
+export function getAgentLocalRegistryPath(agentName: string, cwd = process.cwd()): string {
+  return join(getAgentsDir(cwd), `${agentName}.local-registry.json`);
+}
+
+export function getAgentLocalToolStorePath(agentName: string, cwd = process.cwd()): string {
+  return join(getAgentsDir(cwd), `${agentName}.local-tools.json`);
+}
+
 export function getAgentExperiencePath(agentName: string, cwd = process.cwd()): string {
   return join(getAgentsDir(cwd), `${agentName}.experiences.json`);
 }

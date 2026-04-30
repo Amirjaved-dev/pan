@@ -8,12 +8,13 @@ import { loadAgent } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
 import { getAgentExperiencePath, getAgentRegistryPath } from '../config/paths.js';
 import { withQuietConsole } from '../runtime/quiet-console.js';
+import { createLocalToolRegistryOptions } from '../runtime/tool-storage.js';
 
 function createRegistry(agentName: string): ToolRegistry {
   loadEnv();
   const zeroGKey = requireEnv('ZERO_G_PRIVATE_KEY');
   return new ToolRegistry({
-    indexPointerPath: getAgentRegistryPath(agentName),
+    ...createLocalToolRegistryOptions(agentName),
     zeroGPrivateKey: zeroGKey,
   });
 }

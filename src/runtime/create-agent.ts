@@ -9,6 +9,7 @@ import { patchReflectionErrorResults } from './patch-reflection.js';
 import { patchToolSandboxDefaults } from './patch-sandbox.js';
 import { patchZeroAgentToolGeneration } from './patch-zero-agent.js';
 import { logAgentStep } from './step-logger.js';
+import { useLocalToolStorage } from './tool-storage.js';
 
 export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAgent> {
   loadEnv();
@@ -44,6 +45,8 @@ export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAg
     evolutionTimeoutMs: 180_000,
     testCaseTimeoutMs: 15_000,
   });
+
+  useLocalToolStorage(runtime, agent.name);
 
   runtime.on('step', logAgentStep);
   return runtime;
