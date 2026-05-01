@@ -31,7 +31,9 @@ export async function listAgents(cwd = process.cwd()): Promise<AgentConfig[]> {
           entry.isFile() &&
           entry.name.endsWith('.json') &&
           !entry.name.endsWith('.registry.json') &&
-          !entry.name.endsWith('.experiences.json'),
+          !entry.name.endsWith('.experiences.json') &&
+          !entry.name.endsWith('.local-registry.json') &&
+          !entry.name.endsWith('.local-tools.json'),
       )
       .map((entry) => basename(entry.name, '.json'))
       .sort();

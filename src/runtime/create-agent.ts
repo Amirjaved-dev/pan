@@ -37,7 +37,7 @@ export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAg
     capabilities: agent.capabilities,
     identity,
     zeroGPrivateKey,
-    axlEnabled: true,
+    axlEnabled: config.axl.enabled,
     axlPort: config.axl.port,
     registryPath: getAgentRegistryPath(agent.name),
     experienceMemoryPath: getAgentExperiencePath(agent.name),

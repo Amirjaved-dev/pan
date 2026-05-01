@@ -4,7 +4,7 @@ export const panConfigSchema = z.object({
   defaultAgent: z.string().min(1).default('auto-agent'),
   storageMode: z.literal('zero-g').default('zero-g'),
   axl: z.object({
-    enabled: z.literal(true).default(true),
+    enabled: z.boolean().default(true),
     port: z.number().int().positive().default(9002),
   }),
   ens: z.object({

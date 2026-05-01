@@ -12,9 +12,10 @@ type Check = {
 
 async function checkAxl(port: number): Promise<Check> {
   const urls = [`http://localhost:${port}/info`, `http://localhost:${port}/topology`];
+  let lastDetail = `not reachable on port ${port}`;
 
-  try {
-    for (const url of urls) {
+  for (const url of urls) {
+    try {
       const response = await fetch(url, {
         signal: AbortSignal.timeout(2000),
       });
@@ -26,20 +27,18 @@ async function checkAxl(port: number): Promise<Check> {
           detail: `reachable on port ${port}`,
         };
       }
-    }
 
-    return {
-      name: 'Gensyn AXL',
-      ok: false,
-      detail: `no supported AXL endpoint on port ${port}`,
-    };
-  } catch (error) {
-    return {
-      name: 'Gensyn AXL',
-      ok: false,
-      detail: `not reachable on port ${port}`,
-    };
+      lastDetail = `no supported AXL endpoint on port ${port}`;
+    } catch (error) {
+      lastDetail = `not reachable on port ${port}`;
+    }
   }
+
+  return {
+    name: 'Gensyn AXL',
+    ok: false,
+    detail: lastDetail,
+  };
 }
 
 function envCheck(name: string, value: string | undefined): Check {

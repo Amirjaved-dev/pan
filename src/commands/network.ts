@@ -1,10 +1,46 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { AXLClient } from '@zero-agents/core';
 import { loadConfig } from '../config/load-config.js';
 
-function createAxlClient(config: { axl: { port: number } }): AXLClient {
-  return new AXLClient({ axlPort: config.axl.port });
+function extractPeerId(data: unknown): string | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const record = data as Record<string, unknown>;
+  const candidates = [record.peerId, record.peer_id, record.publicKey, record.public_key, record.our_public_key];
+  const peerId = candidates.find((value) => typeof value === 'string' && value.length > 0);
+  return typeof peerId === 'string' ? peerId : null;
+}
+
+async function fetchAxlJson(port: number, path: string): Promise<unknown> {
+  const response = await fetch(`http://localhost:${port}${path}`, {
+    signal: AbortSignal.timeout(2000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`${path} returned ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function getPeerId(port: number): Promise<string> {
+  let lastError = 'no supported AXL endpoint';
+
+  for (const path of ['/info', '/topology']) {
+    try {
+      const peerId = extractPeerId(await fetchAxlJson(port, path));
+      if (peerId) {
+        return peerId;
+      }
+      lastError = `${path} did not include a peer ID`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  throw new Error(lastError);
 }
 
 export async function cmdNetworkStatus(): Promise<void> {
@@ -19,10 +55,8 @@ export async function cmdNetworkStatus(): Promise<void> {
     return;
   }
 
-  const axl = createAxlClient(config);
-
   try {
-    const peerId = await axl.getPeerId();
+    const peerId = await getPeerId(config.axl.port);
     console.log(`  Peer ID:  ${chalk.green(peerId)}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -31,7 +65,9 @@ export async function cmdNetworkStatus(): Promise<void> {
   }
 
   try {
-    const topologyRes = await fetch(`http://localhost:${config.axl.port}/topology`);
+    const topologyRes = await fetch(`http://localhost:${config.axl.port}/topology`, {
+      signal: AbortSignal.timeout(2000),
+    });
     if (topologyRes.ok) {
       const topology = await topologyRes.json() as Record<string, unknown>;
       const rawPeers = topology.peers;
@@ -40,6 +76,8 @@ export async function cmdNetworkStatus(): Promise<void> {
       for (const p of peers) {
         if (p.peerId) console.log(chalk.gray(`    - ${p.peerId}`));
       }
+    } else {
+      console.log(`  Peers:    ${chalk.yellow(`unavailable (${topologyRes.status})`)}`);
     }
   } catch {
     console.log('  Peers:    ' + chalk.yellow('0 (could not reach AXL node)'));
