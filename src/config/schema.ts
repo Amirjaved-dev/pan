@@ -6,6 +6,7 @@ export const panConfigSchema = z.object({
   axl: z.object({
     enabled: z.boolean().default(true),
     port: z.number().int().positive().default(9002),
+    autoStart: z.boolean().default(true),
   }),
   ens: z.object({
     enabled: z.literal(true).default(true),
@@ -31,6 +32,7 @@ export const defaultPanConfig: PanConfig = panConfigSchema.parse({
   axl: {
     enabled: true,
     port: 9002,
+    autoStart: true,
   },
   ens: {
     enabled: true,

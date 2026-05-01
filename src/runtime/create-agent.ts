@@ -10,6 +10,7 @@ import { patchToolSandboxDefaults } from './patch-sandbox.js';
 import { patchZeroAgentToolGeneration } from './patch-zero-agent.js';
 import { logAgentStep } from './step-logger.js';
 import { useLocalToolStorage } from './tool-storage.js';
+import { ensureAxlRunning } from './axl-autostart.js';
 
 export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAgent> {
   loadEnv();
@@ -20,6 +21,9 @@ export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAg
   const zeroGPrivateKey = requireEnv('ZERO_G_PRIVATE_KEY');
   const ensPrivateKey = requireEnv('ENS_PRIVATE_KEY');
   const rpcUrl = process.env.SEPOLIA_RPC_URL ?? config.ens.rpcUrl;
+  if (config.axl.enabled) {
+    await ensureAxlRunning({ port: config.axl.port, autoStart: config.axl.autoStart });
+  }
   patchEnsSequentialWrites();
   patchReflectionErrorResults();
   patchToolSandboxDefaults();

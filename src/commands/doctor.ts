@@ -3,6 +3,7 @@ import { ToolSandbox } from '@zero-agents/core';
 import { config as loadEnv } from 'dotenv';
 import { loadConfig } from '../config/load-config.js';
 import { detectEnsName } from '../identity/ens.js';
+import { ensureAxlRunning } from '../runtime/axl-autostart.js';
 
 type Check = {
   name: string;
@@ -10,9 +11,18 @@ type Check = {
   detail: string;
 };
 
-async function checkAxl(port: number): Promise<Check> {
+async function checkAxl(port: number, autoStart: boolean): Promise<Check> {
+  const startup = await ensureAxlRunning({ port, autoStart });
+  if (startup.running) {
+    return {
+      name: 'Gensyn AXL',
+      ok: true,
+      detail: startup.detail,
+    };
+  }
+
   const urls = [`http://localhost:${port}/info`, `http://localhost:${port}/topology`];
-  let lastDetail = `not reachable on port ${port}`;
+  let lastDetail = startup.detail;
 
   for (const url of urls) {
     try {
@@ -121,12 +131,14 @@ export async function doctorCommand(): Promise<void> {
   loadEnv();
 
   let axlPort = 9002;
+  let axlAutoStart = true;
   let rpcUrl = process.env.SEPOLIA_RPC_URL ?? 'https://sepolia.drpc.org';
   let allowUnsafeNodeVmFallback = false;
   let decisionProvider: 'openrouter' | 'zero-g' = 'openrouter';
   try {
     const config = await loadConfig();
     axlPort = config.axl.port;
+    axlAutoStart = config.axl.autoStart;
     rpcUrl = process.env.SEPOLIA_RPC_URL ?? config.ens.rpcUrl;
     allowUnsafeNodeVmFallback = config.sandbox.allowUnsafeNodeVmFallback;
     decisionProvider = config.decision.provider;
@@ -145,7 +157,7 @@ export async function doctorCommand(): Promise<void> {
     envCheck('Sepolia RPC URL', process.env.SEPOLIA_RPC_URL),
     await checkEnsAutoDetect(rpcUrl),
     await checkSandbox(allowUnsafeNodeVmFallback),
-    await checkAxl(axlPort),
+    await checkAxl(axlPort, axlAutoStart),
   ];
 
   for (const check of checks) {

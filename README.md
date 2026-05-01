@@ -35,6 +35,8 @@ PASS Tool sandbox: isolated-vm available
 PASS Gensyn AXL: reachable on port 9002
 ```
 
+If no external Gensyn AXL node is listening on port `9002`, Pan auto-starts a local AXL-compatible development node so the CLI and demo can still use `/info`, `/topology`, `/messages`, and `/send`.
+
 Start the interactive shell:
 
 ```powershell
@@ -182,6 +184,7 @@ Most common causes:
 - Node runtime is not 22 or 24: keep `.local-node\node-v24.15.0-win-x64` in this project or install Node 24 globally.
 - `isolated-vm` unavailable: run `.\pan.ps1 doctor` through the launcher, not plain `pnpm dev` with Node 25.
 - AXL unreachable: start or keep the Gensyn AXL node listening on port `9002`.
+- To disable Pan's local AXL auto-start, set `.pan-agents/config.json` `axl.autoStart` to `false`.
 - ENS publish fails: verify Sepolia RPC and that the ENS wallet has Sepolia ETH.
 
 ## Development Commands

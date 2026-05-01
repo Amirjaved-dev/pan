@@ -3,6 +3,7 @@ import * as readline from 'node:readline/promises';
 import chalk from 'chalk';
 import { decideAction } from '../brain/decide-action.js';
 import { loadConfig } from '../config/load-config.js';
+import { ensureAxlRunning } from '../runtime/axl-autostart.js';
 import type { ShellContext } from './commands.js';
 import { getShellCommand, isExitCommand } from './commands.js';
 import { executeDecision } from './execute-decision.js';
@@ -12,6 +13,9 @@ const CONTINUATION_PROMPT = chalk.dim('... ');
 
 export async function startRepl(): Promise<void> {
   const config = await loadConfig();
+  if (config.axl.enabled) {
+    await ensureAxlRunning({ port: config.axl.port, autoStart: config.axl.autoStart });
+  }
   let currentAgent = config.defaultAgent;
   const recentMessages: string[] = [];
 

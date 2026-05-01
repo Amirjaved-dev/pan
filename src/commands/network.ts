@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { loadConfig } from '../config/load-config.js';
+import { ensureAxlRunning } from '../runtime/axl-autostart.js';
 
 function extractPeerId(data: unknown): string | null {
   if (!data || typeof data !== 'object') {
@@ -53,6 +54,11 @@ export async function cmdNetworkStatus(): Promise<void> {
   if (!config.axl.enabled) {
     console.log(chalk.gray('\n  AXL is disabled in config. Set axl.enabled to true.'));
     return;
+  }
+
+  const startup = await ensureAxlRunning({ port: config.axl.port, autoStart: config.axl.autoStart });
+  if (startup.started || !startup.running) {
+    console.log(`  Startup:  ${startup.running ? chalk.green(startup.detail) : chalk.yellow(startup.detail)}`);
   }
 
   try {
