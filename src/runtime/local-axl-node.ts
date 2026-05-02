@@ -264,6 +264,37 @@ async function main() {
           }, 500);
         }
 
+        // Handle mesh protocol messages
+        if (msgBody && typeof msgBody === 'object' && 'type' in msgBody) {
+          const msgType = (msgBody as any).type as string;
+
+          if (msgType === 'mesh_handshake') {
+            process.stdout.write(`\n[mesh] ← handshake from ${fromEns ?? fromPeer}\n`);
+            const ackMsg = { type: 'mesh_handshake', from: agentEns, timestamp: Date.now(), ack: true };
+            messages.push({
+              id: randomUUID(), fromPeerId: fromPeer, fromEns,
+              toPeerId: toEns, message: ackMsg, receivedAt: Date.now(),
+            });
+          }
+
+          if (msgType === 'mesh_heartbeat') {
+            process.stdout.write(`[mesh] ♥ heartbeat from ${fromEns ?? fromPeer}\n`);
+          }
+
+          if (msgType === 'mesh_leave') {
+            process.stdout.write(`\n[mesh] ← ${fromEns ?? fromPeer} left mesh\n`);
+          }
+
+          if (msgType === 'tool_share' && !(msgBody as any).tool_request) {
+            const sharedTool = (msgBody as any).tool as string;
+            process.stdout.write(`\n[mesh] ← tool received "${sharedTool}" from ${fromEns ?? fromPeer}\n`);
+          }
+
+          if (msgType === 'tool_list') {
+            process.stdout.write(`[mesh] ← tool list requested by ${fromEns ?? fromPeer}\n`);
+          }
+        }
+
         writeJson(res, 200, { ok: true });
         return;
       }

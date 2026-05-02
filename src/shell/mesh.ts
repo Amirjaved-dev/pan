@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { loadConfig } from '../config/load-config.js';
 import { getAgentExperiencePath, getAgentLocalToolStorePath, getAgentLocalRegistryPath } from '../config/paths.js';
 import { ensureAxlRunning } from '../runtime/axl-autostart.js';
-import { discoverPeers, sendMeshMessage, createMeshMessage, type PeerInfo, type ToolSharePayload, createToolSharePayload } from '../runtime/mesh-protocol.js';
+import { discoverPeers, sendMeshMessage, createMeshMessage, sendHandshake, sendHeartbeat, sendLeave, type PeerInfo, type ToolSharePayload, createToolSharePayload } from '../runtime/mesh-protocol.js';
 
 type LocalTool = {
   name: string;
@@ -351,5 +351,58 @@ export async function startMesh(): Promise<void> {
 
   addActivity('Mesh mode started', 'system');
   await refreshPeers();
+
+  if (peers.length > 0 && peers[0].connected) {
+    const hs = await sendHandshake(peers[0].url, myEns);
+    if (hs.ok) {
+      addActivity(`Handshake with ${peers[0].ens}`, 'system');
+      if (hs.tools && hs.tools.length > 0) {
+        peers[0].tools = hs.tools;
+      }
+    }
+  }
+
   render();
+
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  let reconnectInterval: ReturnType<typeof setInterval> | null = null;
+
+  heartbeatInterval = setInterval(async () => {
+    if (peers.length === 0) return;
+    const peer = peers[0];
+    if (!peer.connected) return;
+
+    const ok = await sendHeartbeat(peer.url, myEns);
+    if (!ok) {
+      peer.connected = false;
+      peer.latencyMs = -1;
+      addActivity(`${peer.ens} went offline`, 'error');
+      render();
+    } else {
+      peer.lastSeen = Date.now();
+    }
+  }, 3000);
+
+  reconnectInterval = setInterval(async () => {
+    if (peers.length === 0 || peers[0].connected) return;
+
+    const fresh = await discoverPeers();
+    if (fresh.length > 0 && fresh[0].connected) {
+      peers[0] = fresh[0];
+      const hs = await sendHandshake(peers[0].url, myEns);
+      if (hs.ok) {
+        if (hs.tools) peers[0].tools = hs.tools;
+        addActivity(`${peers[0].ens} reconnected!`, 'receive');
+      }
+      render();
+    }
+  }, 5000);
+
+  screen.on('destroy', () => {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    if (reconnectInterval) clearInterval(reconnectInterval);
+    if (peers.length > 0 && peers[0].connected) {
+      sendLeave(peers[0].url, myEns).catch(() => {});
+    }
+  });
 }

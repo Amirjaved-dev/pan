@@ -151,3 +151,31 @@ export async function requestPeerTools(peerUrl: string, myEns: string): Promise<
     return [];
   }
 }
+
+export async function sendHandshake(peerUrl: string, myEns: string): Promise<{ ok: boolean; peerEns?: string; tools?: Array<{ name: string; description: string }> }> {
+  try {
+    const msg = createMeshMessage('mesh_handshake', { toEns: myEns });
+    const sent = await sendMeshMessage(peerUrl, msg);
+    if (!sent) return { ok: false };
+
+    await new Promise(r => setTimeout(r, 300));
+
+    const res = await fetch(`${peerUrl}/tools`, { signal: AbortSignal.timeout(2000) });
+    if (!res.ok) return { ok: true, peerEns: undefined };
+
+    const data = await res.json() as { ens?: string; tools?: Array<{ name: string; description: string }> };
+    return { ok: true, peerEns: data.ens, tools: data.tools ?? [] };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export async function sendHeartbeat(peerUrl: string, myEns: string): Promise<boolean> {
+  const msg = createMeshMessage('mesh_heartbeat');
+  return sendMeshMessage(peerUrl, msg);
+}
+
+export async function sendLeave(peerUrl: string, myEns: string): Promise<boolean> {
+  const msg = createMeshMessage('mesh_leave');
+  return sendMeshMessage(peerUrl, msg);
+}
