@@ -163,7 +163,7 @@ export async function startMesh(): Promise<void> {
     await ensureAxlRunning({ port: config.axl.port, autoStart: config.axl.autoStart });
   }
 
-  const screen = new (blessed as any).Screen({
+  const screen = blessed.screen({
     smartCSR: true,
     title: 'Pan Mesh',
     terminal: 'xterm-256color',
