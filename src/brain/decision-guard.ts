@@ -11,6 +11,11 @@ const CAPABILITY_RESPONSE = [
 
 const PERSONAL_KNOWLEDGE_RESPONSE = 'I only know what is available in this local Pan Agents workspace and the current conversation. I can see your active agent and stored tool history, but I do not know private personal details unless you tell me.';
 
+const TOOL_QUALITY_RESPONSE = [
+  'You are right. Bad generated tools should not be trusted or reused.',
+  'I will treat tool quality feedback as feedback, not as a request to list tools. For live data, I should verify the result shape and reject obviously wrong values instead of saving them as successful memories.',
+].join('\n');
+
 function normalize(input: string): string {
   return input.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -41,35 +46,25 @@ function isVagueQuestion(input: string): boolean {
   return /\b(who|what|why|how|where)\b/.test(text) && wordCount(input) <= 3;
 }
 
-function isToolManagement(input: string): boolean {
+function isToolQualityFeedback(input: string): boolean {
   const text = normalize(input);
-  return (/\b(tool|tools|tooling)\b/.test(text) && /\b(show|list|find|search|available|availble|existing|have|what|delete|remove|rm)\b/.test(text)) ||
-    /\b(clear|wipe|purge)\s+(all\s+)?(tool|tools)\b/.test(text) ||
-    /\b(delete|remove|rm)\s+(all|every|everything)\b/.test(text);
-}
-
-function isToolDeleteRequest(input: string): boolean {
-  const text = normalize(input);
-  return (/\b(tool|tools|tooling)\b/.test(text) && /\b(delete|remove|rm|clear|wipe|purge)\b/.test(text)) ||
-    /\b(delete|remove|rm)\s+(all|every|everything)\b/.test(text);
-}
-
-function extractToolDeleteQuery(input: string): string | null {
-  if (/\b(all|every|everything)\b/i.test(input)) return 'all';
-  const query = input.replace(/\b(delete|remove|rm|tool|tools|tooling|called|named|please|the)\b/gi, '').trim();
-  return query || null;
-}
-
-function isStatusRequest(input: string): boolean {
-  return /\b(status|health|config|configuration|doctor)\b/.test(normalize(input));
-}
-
-function isAgentManagement(input: string): boolean {
-  const text = normalize(input);
-  return /\b(agent|agents)\b/.test(text) && /\b(show|list|switch|use|select|current|active|available|availble|have|what)\b/.test(text);
+  return /\b(tool|tools|tooling|data|result|results)\b/.test(text) &&
+    /\b(bad|wrong|incorrect|low quality|low quility|quality|quility|untrusted|unreliable|garbage|nonsense)\b/.test(text);
 }
 
 export function guardDecision(input: string, decision: AgentDecision): AgentDecision {
+  if (isToolQualityFeedback(input)) {
+    return {
+      ...decision,
+      intent: 'chat',
+      action: 'respond_to_user',
+      confidence: 1,
+      reasoning: 'Guardrail: tool-quality feedback should be acknowledged directly, not treated as a tool inventory request.',
+      userResponse: TOOL_QUALITY_RESPONSE,
+      task: null,
+    };
+  }
+
   if (isIdentityOrCapabilityMessage(input)) {
     return {
       ...decision,
@@ -102,52 +97,6 @@ export function guardDecision(input: string, decision: AgentDecision): AgentDeci
       confidence: 1,
       reasoning: 'Guardrail: simple chat must not enter the tool runtime.',
       userResponse: 'I am here. Give me a task, ask a question, or ask what I can do.',
-      task: null,
-    };
-  }
-
-  if (isToolManagement(input)) {
-    if (isToolDeleteRequest(input)) {
-      return {
-        ...decision,
-        intent: 'tool_management',
-        action: 'delete_tool',
-        confidence: Math.max(decision.confidence, 0.9),
-        reasoning: 'Guardrail: tool deletion must use the built-in approval-gated delete action.',
-        task: null,
-        toolQuery: decision.toolQuery ?? extractToolDeleteQuery(input),
-      };
-    }
-
-    return {
-      ...decision,
-      intent: 'tool_management',
-      action: /\b(find|search)\b/.test(normalize(input)) ? 'find_tool' : 'list_tools',
-      confidence: Math.max(decision.confidence, 0.9),
-      reasoning: 'Guardrail: tool-management request should use built-in tool actions.',
-      task: null,
-      toolQuery: decision.toolQuery ?? (input.replace(/\b(search|find|show|list|what|available|availble|tool|tools|for)\b/gi, '').trim() || null),
-    };
-  }
-
-  if (isStatusRequest(input)) {
-    return {
-      ...decision,
-      intent: 'status',
-      action: 'get_status',
-      confidence: Math.max(decision.confidence, 0.9),
-      reasoning: 'Guardrail: status request should use built-in status action.',
-      task: null,
-    };
-  }
-
-  if (isAgentManagement(input)) {
-    return {
-      ...decision,
-      intent: 'agent_management',
-      action: decision.action === 'switch_agent' ? 'switch_agent' : 'list_agents',
-      confidence: Math.max(decision.confidence, 0.9),
-      reasoning: 'Guardrail: agent-management request should use built-in agent actions.',
       task: null,
     };
   }

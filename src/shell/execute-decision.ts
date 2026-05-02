@@ -8,6 +8,7 @@ import { checkExecutionGate } from '../runtime/execution-gate.js';
 import { runTask } from '../runtime/run-task.js';
 import { writeTrace } from '../runtime/trace.js';
 import type { AgentDecision } from '../brain/action-schema.js';
+import { refineExecutableTask } from '../brain/refine-task.js';
 import type { ShellContext } from './commands.js';
 
 const MIN_EXECUTION_CONFIDENCE = 0.55;
@@ -182,7 +183,15 @@ export async function executeDecision(input: string, decision: AgentDecision, ct
       printPlan(decision);
       return;
     case 'use_or_create_tool': {
-      const task = decision.task ?? input;
+      const refinement = await refineExecutableTask(input, decision.task ?? input);
+      if (refinement.clarificationQuestion) {
+        console.log();
+        printLine(refinement.clarificationQuestion, 'yellow');
+        console.log();
+        return;
+      }
+
+      const task = refinement.task || decision.task || input;
       const gate = checkExecutionGate(task);
       if (!gate.allowed) {
         console.log();
@@ -199,6 +208,9 @@ export async function executeDecision(input: string, decision: AgentDecision, ct
       }
 
       console.log();
+      if (refinement.summary && task !== (decision.task ?? input)) {
+        console.log(`${chalk.gray('think')} ${chalk.gray('│')} ${chalk.gray(refinement.summary)}`);
+      }
       await runTask(task, ctx.agentName);
       console.log();
       return;

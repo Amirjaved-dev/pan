@@ -13,7 +13,7 @@ const muted = chalk.hex('#8a8a8a');
 const faint = chalk.hex('#5f5f5f');
 
 export function buildPrompt(agentName: string): string {
-  return `${chalk.bold('›')} ${muted('Try')} ${faint('"ask an agent to solve a task"')} ${faint(`· ${agentName}`)} `;
+  return `${brand('›')} ${muted(agentName)} ${faint('ask')} `;
 }
 
 export function printWelcome(options: WelcomeOptions): void {

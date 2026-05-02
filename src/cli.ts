@@ -38,6 +38,6 @@ program.action(async () => {
 
 program.parseAsync().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(chalk.red('[error]'), message);
+  console.error(`${chalk.red('error')} ${chalk.gray('│')} ${message}`);
   process.exitCode = 1;
 });

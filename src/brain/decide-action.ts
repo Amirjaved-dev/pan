@@ -6,6 +6,7 @@ import { guardDecision } from './decision-guard.js';
 import { createZeroGChatCompletion } from './zero-g-compute.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const DECISION_TIMEOUT_MS = 12_000;
 
 export type DecisionContext = {
   agentName: string;
@@ -24,6 +25,20 @@ function extractJson(text: string): string {
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   return start >= 0 && end > start ? text.slice(start, end + 1) : text;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 function fallbackDecision(input: string): AgentDecision {
@@ -50,6 +65,16 @@ function fallbackDecision(input: string): AgentDecision {
     };
   }
 
+  if (/\b(tool|tools|tooling|data|result|results)\b/i.test(lower) && /\b(bad|wrong|incorrect|low quality|low quility|quality|quility|untrusted|unreliable|garbage|nonsense)\b/i.test(lower)) {
+    return {
+      intent: 'chat',
+      action: 'respond_to_user',
+      confidence: 0.8,
+      reasoning: 'LLM unavailable; message is tool-quality feedback, not a tool inventory request.',
+      userResponse: 'You are right. Bad generated tools should not be trusted or reused. I should classify your request first, use tools only as hands for concrete tasks, and reject obviously wrong live-data outputs instead of saving them as successful memories.',
+    };
+  }
+
   if (/\b(what|tell|show)\b/i.test(lower) && /\b(know|remember|information|info)\b/i.test(lower) && /\b(me|my)\b/i.test(lower) || /\b(do you know me|do u know me|do you remember me|do u remember me)\b/i.test(lower)) {
     return {
       intent: 'chat',
@@ -57,47 +82,6 @@ function fallbackDecision(input: string): AgentDecision {
       confidence: 0.7,
       reasoning: 'LLM unavailable; personal-knowledge question should not create a tool.',
       userResponse: 'I only know what is available in this local Pan Agents workspace and the current conversation. I do not know private personal details unless you tell me.',
-    };
-  }
-
-  if (/\b(tool|tools|tooling)\b/i.test(lower) || /\b(delete|remove|rm)\s+(all|every|everything)\b/i.test(lower)) {
-    if (/\b(delete|remove|rm|clear|wipe|purge)\b/i.test(lower)) {
-      const deleteAll = /\b(all|every|everything)\b/i.test(lower);
-      return {
-        intent: 'tool_management',
-        action: 'delete_tool',
-        confidence: 0.75,
-        reasoning: 'LLM unavailable; message asks to delete a tool.',
-        toolQuery: deleteAll ? 'all' : text.replace(/\b(delete|remove|rm|tool|tools|tooling|called|named)\b/gi, '').trim() || null,
-      };
-    }
-
-    return {
-      intent: 'tool_management',
-      action: /\b(search|find)\b/i.test(lower) ? 'find_tool' : 'list_tools',
-      confidence: 0.65,
-      reasoning: 'LLM unavailable; message refers to tools.',
-      toolQuery: text.replace(/\b(search|find|show|list|what|available|availble|tool|tools|for)\b/gi, '').trim() || null,
-    };
-  }
-
-  if (/\b(status|health|config|configuration|doctor)\b/i.test(lower)) {
-    return {
-      intent: 'status',
-      action: 'get_status',
-      confidence: 0.65,
-      reasoning: 'LLM unavailable; message asks for status/configuration.',
-    };
-  }
-
-  if (/\b(agent|agents)\b/i.test(lower)) {
-    const switchMatch = lower.match(/\b(?:switch|use|select)\s+(?:to\s+)?([a-z0-9-_]+)/i);
-    return {
-      intent: 'agent_management',
-      action: switchMatch?.[1] ? 'switch_agent' : 'list_agents',
-      confidence: 0.65,
-      reasoning: 'LLM unavailable; message asks about agents.',
-      agentName: switchMatch?.[1] ?? null,
     };
   }
 
@@ -135,7 +119,17 @@ async function createOpenRouterDecision(input: string, context: DecisionContext,
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured');
 
-  const response = await fetch(OPENROUTER_URL, {
+  const requestBody = {
+    model,
+    messages: [
+      { role: 'system', content: DECISION_SYSTEM_PROMPT },
+      { role: 'user', content: buildUserMessage(input, context) },
+    ],
+    response_format: { type: 'json_object' },
+    temperature: 0,
+  };
+
+  let response = await fetch(OPENROUTER_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -143,19 +137,28 @@ async function createOpenRouterDecision(input: string, context: DecisionContext,
       'HTTP-Referer': 'https://github.com/pan-agents/pan-agents',
       'X-Title': 'Pan Agents',
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: DECISION_SYSTEM_PROMPT },
-        { role: 'user', content: buildUserMessage(input, context) },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
-    throw new Error(`OpenRouter request failed with status ${response.status}`);
+    const errorText = await response.text().catch(() => '');
+    if (response.status === 400 && /json mode|response_format/i.test(errorText)) {
+      const { response_format: _responseFormat, ...retryBody } = requestBody;
+      response = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://github.com/pan-agents/pan-agents',
+          'X-Title': 'Pan Agents',
+        },
+        body: JSON.stringify(retryBody),
+      });
+    }
+
+    if (!response.ok) {
+      throw new Error(`OpenRouter request failed with status ${response.status}: ${errorText}`);
+    }
   }
 
   const data = await response.json() as { choices?: Array<{ message?: { content?: string | null } }> };
@@ -189,9 +192,13 @@ export async function decideAction(input: string, context: DecisionContext, opti
 
   try {
     const config = await loadConfig();
-    const content = config.decision.provider === 'zero-g'
-      ? await createZeroGDecision(input, context)
-      : await createOpenRouterDecision(input, context, config.decision.openRouterModel);
+    const content = await withTimeout(
+      config.decision.provider === 'zero-g'
+        ? createZeroGDecision(input, context)
+        : createOpenRouterDecision(input, context, config.decision.openRouterModel),
+      DECISION_TIMEOUT_MS,
+      'Decision LLM',
+    );
 
     const decision = normalizeDecision(JSON.parse(extractJson(content)));
     if (decision) {

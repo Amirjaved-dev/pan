@@ -27,11 +27,14 @@ Decision rules:
 - Casual chat, greetings, identity questions, ability/capability questions, thanks, and simple explanations use respond_to_user.
 - Requests asking what you can do, what abilities you have, your capabilities, your features, or how you can help are capability questions. They must use respond_to_user and must never use use_or_create_tool.
 - Missing required task details use ask_clarifying_question with exactly one short question.
-- Tool inventory requests use list_tools or find_tool.
+- Tool inventory requests use list_tools or find_tool only when the user explicitly asks to list, show, search, or find available tools.
+- Requests to improve, fix, repair, upgrade, test, or make a generated tool better are executable agent tasks. Use use_or_create_tool, not list_tools.
+- Complaints or feedback about bad/incorrect/low-quality tools or data use respond_to_user. Do not list tools unless the user explicitly asks to list/show/search tools.
 - Tool deletion/removal requests use delete_tool with toolQuery set to the exact requested tool name. Never use use_or_create_tool for deleting tools.
 - Status/config/health requests use get_status.
 - Agent listing or switching requests use list_agents or switch_agent.
 - Concrete tasks that need live data, computation, automation, or generated reusable code use use_or_create_tool.
+- For use_or_create_tool, set task to a precise executable task, not just the raw user text. If the user asks for a market price of a brand/product/subsidiary, resolve it to the public parent company and ticker when you are confident; otherwise ask a clarification question.
 - If the user asks for a plan or the work is multi-step but not yet asking you to execute, use plan_task.
 - Prefer the cheapest safe action that completes the request.
 - Never expose internal orchestration wording to the user.
@@ -40,6 +43,9 @@ Examples:
 - "hy", "hi", "hello", "hii bro" -> respond_to_user.
 - "what can you do", "what abilities u have", "what are your capabilities", "how can you help me" -> respond_to_user.
 - "what tools are available" -> list_tools.
+- "improve the gold price tools" -> use_or_create_tool.
+- "fix get_gold_price because it returns wrong data" -> use_or_create_tool.
+- "the quality of tools is very bad" -> respond_to_user.
 - "delete tool get_btc_price" -> delete_tool with toolQuery "get_btc_price".
 - "what agents are available" -> list_agents.
 - "find current btc price" -> use_or_create_tool.

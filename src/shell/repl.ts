@@ -198,6 +198,7 @@ export async function startRepl(): Promise<void> {
       return true;
     }
 
+    console.log(chalk.gray('  ◌ understanding request...'));
     const decision = await decideAction(trimmed, {
       agentName: currentAgent,
       cwd: process.cwd(),

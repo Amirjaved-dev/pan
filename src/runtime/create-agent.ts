@@ -5,14 +5,16 @@ import { loadConfig } from '../config/load-config.js';
 import { getAgentExperiencePath, getAgentRegistryPath } from '../config/paths.js';
 import { createEnsIdentity, requireEnv } from '../identity/ens.js';
 import { patchEnsSequentialWrites } from './patch-ens.js';
-import { patchReflectionErrorResults } from './patch-reflection.js';
+import { initRootCauseAnalysis } from './root-cause-analysis.js';
 import { patchToolSandboxDefaults } from './patch-sandbox.js';
-import { patchZeroAgentToolGeneration } from './patch-zero-agent.js';
+import { initToolGenerator } from './tool-generator.js';
 import { logAgentStep } from './step-logger.js';
 import { repairLocalToolStorage, useLocalToolStorage } from './tool-storage.js';
 import { ensureAxlRunning } from './axl-autostart.js';
 import { patchToolEvaluatorSmokeInputs } from './patch-evaluator.js';
-import { patchRegistrySearchSemantics } from './patch-registry-search.js';
+import { initToolDiscovery } from './tool-discovery.js';
+import { initAdaptiveMemory } from './adaptive-memory.js';
+import { initStrategySelector } from './strategy-selector.js';
 
 export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAgent> {
   loadEnv();
@@ -28,17 +30,19 @@ export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAg
     await ensureAxlRunning({ port: config.axl.port, autoStart: config.axl.autoStart });
   }
   patchEnsSequentialWrites();
-  patchReflectionErrorResults();
+  initRootCauseAnalysis();
   patchToolSandboxDefaults();
   patchToolEvaluatorSmokeInputs();
-  patchRegistrySearchSemantics();
+  initToolDiscovery();
+  initAdaptiveMemory();
+  initStrategySelector();
   const identity = await createEnsIdentity({
     ensName: agent.ensName,
     privateKey: ensPrivateKey,
     rpcUrl,
   });
 
-  patchZeroAgentToolGeneration();
+  initToolGenerator();
 
   const runtime = new SelfEvolvingAgent({
     name: agent.name,

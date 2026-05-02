@@ -31,6 +31,7 @@ const stepLabels: Record<AgentStepEvent['type'], string> = {
 };
 
 let pendingGeneratedToolLabel: string | null = null;
+let pendingStrategy: string | null = null;
 
 function getTaskDescription(event: AgentStepEvent): string {
   const task = event.data && typeof event.data === 'object' && 'task' in event.data ? event.data.task : null;
@@ -48,6 +49,21 @@ function describeReusableTool(task: string): string | null {
 }
 
 function formatStepMessage(event: AgentStepEvent): string {
+  if (event.type === 'strategy' && event.message.startsWith('Strategy selected:')) {
+    pendingStrategy = event.message.replace('Strategy selected:', '').trim();
+    if (pendingStrategy === 'reuse_existing_tool') return 'Checking memory and reusable tools...';
+    if (pendingStrategy === 'generate_new_tool') return 'No strong match in memory; preparing a new tool...';
+    if (pendingStrategy === 'improve_existing_tool') return 'Existing tool needs improvement...';
+    return event.message;
+  }
+
+  if (event.type === 'strategy' && event.message.startsWith('Reason:')) {
+    const reason = event.message.replace('Reason:', '').trim();
+    const label = pendingStrategy ? pendingStrategy.replace(/_/g, ' ') : 'strategy';
+    pendingStrategy = null;
+    return `${label}: ${reason}`;
+  }
+
   if (event.type === 'miss') {
     pendingGeneratedToolLabel = describeReusableTool(getTaskDescription(event));
     if (pendingGeneratedToolLabel) {
@@ -62,6 +78,7 @@ function formatStepMessage(event: AgentStepEvent): string {
 
   if (event.type === 'saving' || event.type === 'executing' || event.type === 'done' || event.type === 'error') {
     pendingGeneratedToolLabel = null;
+    pendingStrategy = null;
   }
 
   return event.message;
@@ -85,7 +102,8 @@ export function logAgentStep(event: AgentStepEvent): void {
   }
 
   const color = stepColors[event.type];
-  writeLine(`${color(`[${stepLabels[event.type]}]`)} ${formatStepMessage(event)}`);
+  const label = stepLabels[event.type].padEnd(5, ' ');
+  writeLine(`${color(`${label}`)} ${chalk.gray('│')} ${formatStepMessage(event)}`);
 
   if (process.env.PAN_DEBUG_TOOLS === '1' && event.type === 'sandboxing') {
     const tool = event.data && typeof event.data === 'object' && 'tool' in event.data ? event.data.tool : null;

@@ -1,5 +1,7 @@
 import { ToolGenerator, type Tool } from '@zero-agents/core';
 import { PAN_SYSTEM_PROMPT } from './system-prompt.js';
+import { getFailurePatterns, extractTaskSignature } from './adaptive-memory.js';
+import type { FailureCategory } from './root-cause-analysis.js';
 
 type ToolPayload = Pick<Tool, 'name' | 'description' | 'code' | 'schema' | 'tags'>;
 
@@ -9,6 +11,49 @@ type PatchableToolGenerator = {
 };
 
 let isPatched = false;
+
+let pendingFailureContext: string | null = null;
+
+export function setFailureContextForGeneration(context: string | null): void {
+  pendingFailureContext = context;
+}
+
+function buildFailureHint(taskDescription: string): string {
+  if (!pendingFailureContext) return '';
+
+  const patterns = getFailurePatterns();
+  const taskSig = extractTaskSignature(taskDescription);
+  const relevantFailures = patterns
+    .filter((p) => signatureOverlap(taskSig, p.taskSignature) > 0.3)
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 5);
+
+  if (relevantFailures.length === 0) return '';
+
+  const lines = relevantFailures.map((f) =>
+    `  - [${f.failureCategory}] ${f.failureDetail} (${f.attemptCount} attempt(s))`
+  ).join('\n');
+
+  const hint = `
+Previous failures on similar tasks (DO NOT repeat these mistakes):
+${lines}
+${pendingFailureContext ? `\nSpecific guidance from last failure:\n  ${pendingFailureContext}` : ''}
+`;
+
+  pendingFailureContext = null;
+  return hint;
+}
+
+function signatureOverlap(a: string, b: string): number {
+  const setA = new Set(a.split(' '));
+  const setB = new Set(b.split(' '));
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let intersection = 0;
+  for (const term of setA) {
+    if (setB.has(term)) intersection += 1;
+  }
+  return intersection / Math.min(setA.size, setB.size);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -139,7 +184,7 @@ function parseLooseToolPayload(text: string): ToolPayload | null {
   };
 }
 
-export function patchZeroAgentToolGeneration(): void {
+export function initToolGenerator(): void {
   if (isPatched) {
     return;
   }
@@ -150,6 +195,8 @@ export function patchZeroAgentToolGeneration(): void {
 
   prototype.createMessages = function createMessages(taskDescription: string): Array<{ role: string; content: string }> {
     const messages = originalCreateMessages.call(this, taskDescription);
+    const failureHint = buildFailureHint(taskDescription);
+
     return messages.map((message) => {
       if (message.role !== 'system') {
         return message;
@@ -162,26 +209,24 @@ export function patchZeroAgentToolGeneration(): void {
 Pan system prompt:
 ${PAN_SYSTEM_PROMPT}
 
-Runtime notes:
-- Return strict JSON only. The code field must be a valid JSON string with escaped newlines and quotes, not raw JavaScript outside JSON.
-- Think like an agent building memory for future tasks. Generate reusable domain tools, not one-off tools for the literal example.
-- Name tools by reusable capability. For example, a task like "find BTC price" should generate get_crypto_prices or get_crypto_price, accept symbol/symbols params, and support future BTC/ETH/SOL requests. Do not name it get_btc_price unless the task truly cannot generalize.
-- Generated tools run in a secure isolated-vm sandbox.
-- Network access is available through standard fetch(url, options).
-- The tool is first sandbox-smoke-tested before evaluation, so it must run successfully with params={} and with natural-language params such as { query, task, terms, symbol, symbols }.
-- Treat every params field as optional. Supported runtime params may include query, task, normalizedTask, terms, symbol, symbols, assetIds, and requestedOutput, but none are guaranteed.
-- Evaluation may pass placeholder string values such as "sample" for schema fields. Validate symbols against known assets or task text before fetching; if a provided symbol is invalid or generic, fall back to the asset requested in the task description or a safe default like BTC.
-- Never read nested fields like response.asset.price or params.assetIds.symbol without validating every parent first.
-- Derive requested entities from params.query, params.task, normalizedTask, terms, or the task description. Handle reasonable user typos using general context, not hardcoded examples.
-- Use public HTTPS JSON APIs that do not require API keys when live external data is needed.
-- Do not use placeholder API keys, demo keys, or endpoints that require a secret the user did not provide.
-- Always check response.ok, parse JSON defensively, validate nested fields before reading them, and return structured JSON errors instead of throwing on normal API failures.
-- For price outputs, return numbers, not numeric strings. For Coinbase amount fields, use Number.parseFloat(data.data.amount) and validate Number.isFinite before returning.
-- If an external-data task has a well-known public source, prefer stable endpoints over search-result pages or HTML scraping.
-- For crypto prices, prefer symbol-pair spot APIs such as Coinbase's public https://api.coinbase.com/v2/prices/{SYMBOL}-USD/spot endpoint for single symbols, because it accepts tickers directly and avoids CoinGecko id mistakes. If using CoinGecko, prefer params.coinGeckoId, params.assetId, or params.assetIds[symbol]. Do not pass ticker symbols directly as CoinGecko ids.
-- For mixed market-data requests, identify every requested asset first. Use appropriate public data sources for each asset class and return one result per requested item.
-- If an expected API field is missing, return a structured error object instead of throwing during normal data validation. Throw only for programming errors.
-- Do not use Node-only APIs such as require, process, fs, child_process, http, https, or net.`
+Discovery & generation rules:
+- You are building tools that LEARN and IMPROVE over time. Each tool should handle its domain broadly, not just one example.
+- Identify the ASSET CLASS first: crypto (BTC/ETH/SOL), equity (stocks like NVDA/AAPL), commodity (gold/oil/silver), forex, or other.
+- For each asset class, DISCOVER the right public data source. Do not assume one API works for everything.
+- Crypto: Coinbase spot (api.coinbase.com/v2/prices/{SYMBOL}-USD/spot) accepts tickers directly. CoinGecko needs coin IDs not tickers.
+- Equities: Yahoo Finance chart API (query1.finance.yahoo.com) for major US stocks. Map company names to tickers.
+- Commodities: Gold=XAU, Oil=CRUDE, Silver=XAG. These are NOT stock tickers. Yahoo uses GC=F for gold, SI=F for silver, CL=F for crude oil. Metal/commodity price APIs differ from stock APIs.
+- Forex: Currency pairs like EUR-USD, GBP-USD use different endpoints than stocks or crypto.
+- If you do not know the correct data source for an asset class, write the tool to try multiple public sources with fallback logic.
+- Name tools by reusable capability: get_market_price, get_crypto_price, get_commodity_price — not get_btc_price or get_gold_price.
+- Accept symbol/symbols/query params and resolve them to the correct identifier format for each data source.
+- Generated tools run in a secure isolated-vm sandbox with fetch() available.
+- Network access through standard fetch(url, options). No API keys unless user provided one.
+- Treat every params field as optional. Supported runtime params may include query, task, normalizedTask, terms, symbol, symbols, assetIds, requestedOutput.
+- Validate all API responses defensively: check response.ok, validate nested fields exist before reading, return structured error objects on failure.
+- Return numbers for prices, not strings. Use Number.isFinite() to validate before returning.
+- Do not use Node-only APIs: require, process, fs, child_process, http, https, net.
+- Do not use placeholder or demo API keys.${failureHint ? `\n${failureHint}` : ''}`,
       };
     });
   };

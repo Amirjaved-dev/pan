@@ -24,6 +24,10 @@ function validateToolCode(toolCode: string): string | null {
     return 'Generated tool used a placeholder API key. Use only public endpoints that work without secrets, or return a clear unsupported-data-source error.';
   }
 
+  if (/coingecko\.com/i.test(toolCode) && /\b(nvidia|nvda|apple|aapl|tesla|tsla|stock|stocks|equity|ticker)\b/i.test(toolCode)) {
+    return 'Generated stock-price tool used CoinGecko, which is a crypto API. Use a no-key equities source such as Stooq CSV for stocks.';
+  }
+
   if (/console\.(log|error|warn|info)\s*\(/.test(toolCode)) {
     return 'Generated tool writes to console. Return structured data instead of logging.';
   }

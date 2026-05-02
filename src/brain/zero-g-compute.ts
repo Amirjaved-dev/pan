@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 
 const ZERO_G_RPC_URL = 'https://evmrpc-testnet.0g.ai';
+const ZERO_G_FETCH_TIMEOUT_MS = 15_000;
 
 type ZeroGChatOptions = {
   privateKey: string;
@@ -70,6 +71,7 @@ export async function createZeroGChatCompletion(options: ZeroGChatOptions): Prom
 
   const response = await fetch(`${endpoint}/chat/completions`, {
     method: 'POST',
+    signal: AbortSignal.timeout(ZERO_G_FETCH_TIMEOUT_MS),
     headers: {
       'Content-Type': 'application/json',
       ...headers,
