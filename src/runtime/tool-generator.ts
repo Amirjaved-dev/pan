@@ -213,9 +213,12 @@ Discovery & generation rules:
 - You are building tools that LEARN and IMPROVE over time. Each tool should handle its domain broadly, not just one example.
 - Identify the ASSET CLASS first: crypto (BTC/ETH/SOL), equity (stocks like NVDA/AAPL), commodity (gold/oil/silver), forex, or other.
 - For each asset class, DISCOVER the right public data source. Do not assume one API works for everything.
-- Crypto: Coinbase spot (api.coinbase.com/v2/prices/{SYMBOL}-USD/spot) accepts tickers directly. CoinGecko needs coin IDs not tickers.
+- Crypto: Coinbase spot (api.coinbase.com/v2/prices/{SYMBOL}-USD/spot) accepts tickers directly and is the most reliable no-key option. CoinGecko needs coin IDs not tickers and may rate-limit.
 - Equities: Yahoo Finance chart API (query1.finance.yahoo.com) for major US stocks. Map company names to tickers.
 - Commodities: Gold=XAU, Oil=CRUDE, Silver=XAG. These are NOT stock tickers. Yahoo uses GC=F for gold, SI=F for silver, CL=F for crude oil. Metal/commodity price APIs differ from stock APIs.
+- IMPORTANT: Always test the exact URL you construct. A 404 means the URL path is wrong. Double-check parameter interpolation.
+- If an API returns 404, try a different API entirely rather than tweaking the same broken URL.
+- For unknown asset classes, use try/catch with multiple fallback APIs.
 - Forex: Currency pairs like EUR-USD, GBP-USD use different endpoints than stocks or crypto.
 - If you do not know the correct data source for an asset class, write the tool to try multiple public sources with fallback logic.
 - Name tools by reusable capability: get_market_price, get_crypto_price, get_commodity_price — not get_btc_price or get_gold_price.

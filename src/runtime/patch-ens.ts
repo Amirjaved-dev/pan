@@ -88,9 +88,9 @@ export function patchEnsSequentialWrites(): void {
       abi: RESOLVER_ABI,
       client: {
         public: manager.publicClient,
-        wallet: manager.walletClient,
+        wallet: manager.walletClient as any,
       },
-    } as never) as unknown as EnsResolverContract;
+    } as any) as unknown as EnsResolverContract;
     const node = namehash(normalize(manager.ensName));
 
     for (const record of getRecords(profile)) {
