@@ -5,8 +5,7 @@ import { printModel, setDecisionProvider, setOpenRouterModel } from '../commands
 import { cmdToolsDelete, cmdToolsDeleteAll, cmdToolsList, cmdToolsSearch, isDeleteAllToolsQuery } from '../commands/tools.js';
 import { loadConfig } from '../config/load-config.js';
 import { executeSlashAgents, executeSlashNetwork, executeSlashStatus, executeSlashSwitchAgent } from './execute-decision.js';
-import { cmdNetworkSend, cmdNetworkShareTool, cmdNetworkMessages, cmdNetworkDemo, cmdNetworkRequestTool } from '../commands/network.js';
-import { startMesh } from './mesh.js';
+import { cmdNetworkSend, cmdNetworkMessages, cmdNetworkRequestTool, cmdShareTool, cmdImportTool, cmdListPeerTools } from '../commands/network.js';
 
 export interface ShellContext {
   agentName: string;
@@ -45,67 +44,46 @@ const commands: Record<string, { fn: ShellCommand; description: string }> = {
     fn: async (args: string, ctx) => await cmdTools({ args, ctx }),
     description: 'List or search tools',
   },
-  demo: {
-    fn: async () => {
-      await cmdNetworkDemo();
-    },
-    description: 'Show live AXL multi-agent demo',
-  },
-  mesh: {
-    fn: async () => {
-      await startMesh();
-    },
-    description: 'Enter live tool exchange TUI with peer agent',
-  },
-  'request-tool': {
+  share: {
     fn: async (args: string) => {
-      const trimmed = args.trim();
-      if (!trimmed) {
-        console.log(chalk.yellow('  Usage: /request-tool <tool-name> from <agent-ens>'));
-        console.log(chalk.gray('  Example: /request-tool data-scraper from execute-agent.eth'));
+      const toolName = args.trim();
+      if (!toolName) {
+        console.log(chalk.yellow('  Usage: /share <tool-name>'));
+        console.log(chalk.gray('  Shares the tool with all connected peers.'));
         return;
       }
-
-      const myEns = process.env.PAN_AGENT_ENS ?? '';
-      const allPeers = [process.env.AGENT1_ENS_NAME, process.env.AGENT2_ENS_NAME, 'execute-agent.eth', 'research-agent.eth'].filter((v): v is string => !!v);
-      const otherPeers = allPeers.filter(p => p.toLowerCase() !== myEns.toLowerCase());
-
-      let targetEns: string;
-      let rawToolName: string;
-
-      const fromMatch = trimmed.match(/^(.+?)\s+from\s+(.+)$/i);
-      if (fromMatch) {
-        rawToolName = fromMatch[1].trim();
-        targetEns   = fromMatch[2].trim();
-        if (/^(any|all|available|some|a\s+tool|tools?)$/i.test(targetEns)) {
-          targetEns = otherPeers[0] ?? allPeers[0] ?? targetEns;
-        }
-      } else {
-        const parts = trimmed.split(/\s+/).filter(Boolean);
-        const foundPeerIdx = parts.findIndex(p => allPeers.some(kp => kp.toLowerCase() === p.toLowerCase()));
-        if (foundPeerIdx >= 0) {
-          targetEns   = parts[foundPeerIdx];
-          rawToolName = parts.filter((_, i) => i !== foundPeerIdx).join(' ') || 'any';
-        } else if (parts.length >= 2 && parts[1].toLowerCase() === 'from' && parts.length >= 3) {
-          rawToolName = parts[0];
-          targetEns   = parts.slice(2).join(' ');
-        } else {
-          rawToolName = parts.join(' ');
-          targetEns   = otherPeers[0] ?? allPeers[0] ?? 'execute-agent.eth';
-        }
-      }
-
-      const toolName = rawToolName.replace(/^(get|fetch|request|find|give|show|list|search|grab)\s+/i, '').trim() || rawToolName;
-
-      if (targetEns.toLowerCase() === myEns.toLowerCase()) {
-        console.log(chalk.yellow(`  Cannot request tool from yourself (${myEns}). Requesting from ${otherPeers[0] ?? 'the other agent'} instead.`));
-        targetEns = otherPeers[0] ?? allPeers.find(p => p.toLowerCase() !== myEns.toLowerCase()) ?? targetEns;
-      }
-
-      console.log(chalk.gray(`  Resolved: requesting "${toolName}" from ${targetEns}`));
-      await cmdNetworkRequestTool(targetEns, toolName);
+      await cmdShareTool(toolName);
     },
-    description: 'Request a tool from another agent via AXL',
+    description: 'Share a tool with all connected agents',
+  },
+  import: {
+    fn: async (args: string) => {
+      const toolName = args.trim();
+      if (!toolName) {
+        console.log(chalk.yellow('  Usage: /import <tool-name>'));
+        console.log(chalk.gray('  Imports a tool from any connected peer.'));
+        return;
+      }
+      await cmdImportTool(toolName);
+    },
+    description: 'Import a tool from a connected agent',
+  },
+  peers: {
+    fn: async () => {
+      await cmdListPeerTools();
+    },
+    description: 'Show connected peers and their tools',
+  },
+  request: {
+    fn: async (args: string) => {
+      const toolName = args.trim();
+      if (!toolName) {
+        console.log(chalk.yellow('  Usage: /request <tool-name>'));
+        return;
+      }
+      await cmdImportTool(toolName);
+    },
+    description: 'Request a tool from a peer (alias for /import)',
   },
   network: {
     fn: async (args: string) => {
@@ -114,14 +92,10 @@ const commands: Record<string, { fn: ShellCommand; description: string }> = {
         await executeSlashNetwork();
       } else if (parts[0] === 'messages') {
         await cmdNetworkMessages();
-      } else if (parts[0] === 'demo') {
-        await cmdNetworkDemo();
       } else if (parts[0] === 'send' && parts.length >= 3) {
         await cmdNetworkSend(parts[1], parts.slice(2).join(' '));
-      } else if (parts[0] === 'share-tool' && parts.length >= 3) {
-        await cmdNetworkShareTool(parts[1], parts[2]);
       } else {
-        console.log(chalk.yellow('  Usage: /network [status|messages|demo|send <peer> <msg>|share-tool <peer> <tool>]'));
+        console.log(chalk.yellow('  Usage: /network [status|messages|send <peer> <msg>]'));
       }
     },
     description: 'Network status and messaging',
@@ -180,12 +154,12 @@ export function getSlashCommandItems(filter = ''): SlashCommandItem[] {
 export function getSlashCommandRows(filter = '', selectedIndex = 0, width = 96): string[] {
   return getSlashCommandItems(filter).map((item, index) => {
     const selected = index === selectedIndex;
-    const marker = selected ? chalk.hex('#de7a55')('›') : ' ';
+    const marker = selected ? chalk.hex('#de7a55')('>') : ' ';
     const command = selected ? chalk.bold.hex('#c7d2fe')(item.command.padEnd(12)) : chalk.hex('#de7a55')(item.command.padEnd(12));
     const plainPrefixLength = 2 + 12 + 1;
     const maxDescriptionLength = Math.max(12, width - plainPrefixLength);
     const description = item.description.length > maxDescriptionLength
-      ? `${item.description.slice(0, Math.max(0, maxDescriptionLength - 1))}…`
+      ? `${item.description.slice(0, Math.max(0, maxDescriptionLength - 1))}...`
       : item.description;
     return `${marker} ${command} ${chalk.gray(description)}`;
   });

@@ -12,8 +12,10 @@ type WelcomeOptions = {
 const brand = chalk.hex('#de7a55');
 const muted = chalk.hex('#8a8a8a');
 const faint = chalk.hex('#5f5f5f');
+const ens = chalk.hex('#7dd3fc');
 
-export function buildPrompt(agentName: string): string {
+export function buildPrompt(agentName: string, ensName?: string): string {
+  if (ensName) return `${brand('›')} ${ens(ensName)} ${faint('ask')} `;
   return `${brand('›')} ${muted(agentName)} ${faint('ask')} `;
 }
 
@@ -23,15 +25,17 @@ export function printWelcome(options: WelcomeOptions): void {
     : options.decisionProvider;
 
   const title = `${chalk.bold.white('Pan Agents')} ${muted(`v${options.version}`)}`;
-  const ensLabel = options.ensName ? `${faint('·')} ${chalk.hex('#7dd3fc')(options.ensName)} ` : '';
-  const subtitle = `${muted(options.agentName)} ${faint('·')} ${muted(modelLabel)} ${ensLabel}`;
+  const identityLine = options.ensName
+    ? `${ens(options.ensName)} ${faint('·')} ${muted(options.agentName)}`
+    : muted(options.agentName);
+  const metaLine = `${muted(modelLabel)}${faint(' ·')} ${muted('Sepolia')}`;
   const cwd = muted(options.cwd.replace(process.env.USERPROFILE ?? '', '~'));
 
   console.log();
   console.log(`${brand('  ██     ██')}     ${title}`);
-  console.log(`${brand('  ███   ███')}     ${subtitle}`);
-  console.log(`${brand('  ████ ████')}     ${cwd}`);
-  console.log(`${brand('  ██ ███ ██')}`);
+  console.log(`${brand('  ███   ███')}     ${identityLine}`);
+  console.log(`${brand('  ████ ████')}     ${metaLine}`);
+  console.log(`${brand('  ██ ███ ██')}     ${cwd}`);
   console.log(`${brand('  ██  █  ██')}`);
   console.log();
   console.log(`  ${brand('/doctor')} ${muted('to verify keys and services')}`);

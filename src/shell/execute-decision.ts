@@ -1,8 +1,8 @@
 import chalk from 'chalk';
 import * as readline from 'node:readline/promises';
-import { listAgents } from '../agents/store.js';
+import { listAgents, loadAgent } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
-import { cmdNetworkStatus, cmdNetworkSend, cmdNetworkShareTool, cmdNetworkDemo } from '../commands/network.js';
+import { cmdNetworkStatus, cmdNetworkSend, cmdShareTool, cmdImportTool } from '../commands/network.js';
 import { cmdToolsDelete, cmdToolsDeleteAll, cmdToolsList, cmdToolsSearch, isDeleteAllToolsQuery, previewDeleteAllTools } from '../commands/tools.js';
 import { checkExecutionGate } from '../runtime/execution-gate.js';
 import { runTask } from '../runtime/run-task.js';
@@ -57,9 +57,15 @@ async function askDeleteApproval(toolName: string, agentName: string): Promise<b
 async function printStatus(ctx: ShellContext): Promise<void> {
   const config = await loadConfig();
   const agents = await listAgents();
+  let ensName: string | undefined;
+  try {
+    const agent = await loadAgent(ctx.agentName);
+    ensName = agent.ensName;
+  } catch { /* not found */ }
 
   console.log(chalk.bold('\n  Pan Status:'));
   console.log(`  Agent:       ${chalk.green(ctx.agentName)}`);
+  if (ensName) console.log(`  Identity:    ${chalk.cyan(ensName)}`);
   console.log(`  Storage:     ${chalk.cyan(config.storageMode)}`);
   console.log(`  AXL:        ${config.axl.enabled ? chalk.green(`enabled (port ${config.axl.port})`) : chalk.red('disabled')}`);
   console.log(`  ENS:        ${config.ens.enabled ? chalk.green('enabled') : chalk.red('disabled')}`);
@@ -209,23 +215,22 @@ export async function executeDecision(input: string, decision: AgentDecision, ct
 
       console.log();
       if (refinement.summary && task !== (decision.task ?? input)) {
-        console.log(`${chalk.gray('think')} ${chalk.gray('│')} ${chalk.gray(refinement.summary)}`);
+        console.log(`${chalk.gray('think')} ${chalk.gray('|')} ${chalk.gray(refinement.summary)}`);
       }
       await runTask(task, ctx.agentName);
       console.log();
       return;
     }
     case 'share_tool_with_agent': {
-      const peerId = typeof decision.params?.peerId === 'string' ? decision.params.peerId : null;
-      const toolName = typeof decision.params?.toolName === 'string' ? decision.params.toolName : null;
-      if (!peerId || !toolName) {
+      const toolName = typeof decision.params?.toolName === 'string' ? decision.params.toolName : decision.toolQuery ?? null;
+      if (!toolName) {
         console.log();
-        printLine('I need both a peer ID and a tool name to share a tool.', 'yellow');
+        printLine('Which tool should I share?', 'yellow');
         console.log();
         return;
       }
       console.log();
-      await cmdNetworkShareTool(peerId, toolName);
+      await cmdShareTool(toolName, ctx.agentName);
       console.log();
       return;
     }
@@ -234,7 +239,7 @@ export async function executeDecision(input: string, decision: AgentDecision, ct
       const message = typeof decision.params?.message === 'string' ? decision.params.message : null;
       if (!peerId || !message) {
         console.log();
-        printLine('I need both a peer ID and a message to send.', 'yellow');
+        printLine('I need both a peer and a message to send.', 'yellow');
         console.log();
         return;
       }
@@ -244,7 +249,7 @@ export async function executeDecision(input: string, decision: AgentDecision, ct
       return;
     }
     case 'run_network_demo':
-      await cmdNetworkDemo();
+      await cmdNetworkStatus();
       return;
   }
 }

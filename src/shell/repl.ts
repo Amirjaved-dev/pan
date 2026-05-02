@@ -3,6 +3,7 @@ import * as readlineCore from 'node:readline';
 import chalk from 'chalk';
 import { decideAction } from '../brain/decide-action.js';
 import { loadConfig } from '../config/load-config.js';
+import { loadAgent } from '../agents/store.js';
 import { ensureAxlRunning } from '../runtime/axl-autostart.js';
 import type { ShellContext } from './commands.js';
 import { getShellCommand, getSlashCommandItems, getSlashCommandRows, isExitCommand } from './commands.js';
@@ -149,7 +150,7 @@ async function readInteractiveLine(prompt: string): Promise<string> {
         return;
       }
 
-      if (char && !key.ctrl && !key.meta) {
+      if (char && !key.ctrl && !key.meta && !(key.sequence ?? '').match(/^\x1b\[M|\x1b\[\d+;\d+[Mm]|\x1b\[<\d+;\d+;\d+[Mm]/)) {
         line += char;
         dropdownQuery = isSlashMenuInput(line) ? line.trimStart() : '/';
         selectedIndex = 0;
@@ -220,7 +221,7 @@ export async function startRepl(): Promise<void> {
     return;
   }
 
-  // Fetch resolved identity from the running AXL node
+  // Resolve ENS name: AXL node first, then agent config fallback, then env var
   let resolvedEns: string | undefined;
   if (config.axl.enabled) {
     try {
@@ -231,7 +232,17 @@ export async function startRepl(): Promise<void> {
         const info = await infoRes.json() as { ens?: string };
         if (info.ens) resolvedEns = info.ens;
       }
-    } catch { /* AXL not up yet — skip */ }
+    } catch { /* AXL not up yet — fall through */ }
+  }
+  if (!resolvedEns) {
+    try {
+      const agent = await loadAgent(currentAgent);
+      if (agent.ensName && agent.ensName.endsWith('.eth')) resolvedEns = agent.ensName;
+    } catch { /* agent config not found */ }
+  }
+  if (!resolvedEns) {
+    const envEns = process.env.PAN_AGENT_ENS;
+    if (envEns && envEns !== 'auto' && envEns.endsWith('.eth')) resolvedEns = envEns;
   }
 
   printWelcome({
@@ -245,7 +256,7 @@ export async function startRepl(): Promise<void> {
 
   while (true) {
     try {
-      let input = await readInteractiveLine(buildPrompt(currentAgent));
+      let input = await readInteractiveLine(buildPrompt(currentAgent, resolvedEns));
 
       if (input.endsWith('\\')) {
         let continued = input.slice(0, -1);
