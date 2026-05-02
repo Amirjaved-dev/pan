@@ -178,15 +178,25 @@ const C = {
   blue: 111,
 };
 
-function drawBox(lines: string[], width: number, title?: string, borderColor?: number): string[] {
-  const bc = borderColor !== undefined ? fg(borderColor) : '';
-  const w = Math.max(width, 10);
-  const top = title
-    ? bc + '┌' + BOLD + fg(C.orange) + ' ' + title.padEnd(w - 2) + RESET + bc + '┐'
-    : bc + '┌' + '─'.repeat(w - 2) + '┐';
-  const bot = bc + '└' + '─'.repeat(w - 2) + '┘';
-  const padded = lines.map(l => bc + '│ ' + RESET + l + RESET + ' '.repeat(Math.max(0, w - l.length - 4)) + bc + ' │');
-  return [top, ...padded, bot];
+function strWidth(s: string): number {
+  let w = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c > 0x1F000 || (c >= 0x20 && c <= 0x7E)) w++;
+    else if (c === 0x09 || c === 0x0A) { /* skip */ }
+    else w++;
+  }
+  return w;
+}
+
+function padRight(s: string, len: number): string {
+  const sw = strWidth(s);
+  return s + ' '.repeat(Math.max(0, len - sw));
+}
+
+function padLeft(s: string, len: number): string {
+  const sw = strWidth(s);
+  return ' '.repeat(Math.max(0, len - sw)) + s;
 }
 
 export async function startMesh(): Promise<void> {
@@ -224,26 +234,33 @@ export async function startMesh(): Promise<void> {
   }
 
   function render(): void {
-    const cols = process.stdout.columns || 80;
-    const rows = process.stdout.rows || 24;
+    const cols = Math.max(process.stdout.columns || 80, 40);
+    const rows = Math.max(process.stdout.rows || 24, 16);
 
-    const halfW = Math.floor(cols / 2);
-    const panelH = rows - 11;
+    const out: string[] = [];
+    out.push(CLEAR + HIDE_CURSOR);
 
     // Header
-    const headerLines = [
-      '',
-      `  ${fg(C.orange)}▄▀▄${RESET}  ${BOLD}${fg(C.orange)}Pan Mesh${RESET}${DIM}${fg(C.gray)}  v0.1.0 · zero-g · AXL tool exchange${RESET}`,
-      `  ${fg(C.gray)}${myEns || agentName}${RESET} ${fg(C.gray)}· port ${myPort}${RESET}   ${peers.length > 0 && peers[0].connected ? fg(C.green) + '● Connected' + (peers[0].latencyMs > 0 ? ' ' + peers[0].latencyMs + 'ms' : '') : peers.length > 0 ? fg(C.yellow) + '○ offline' : fg(C.gray) + '○ No peer'}${RESET}`,
-    ];
+    out.push('');
+    out.push(`  ${fg(C.orange)}▄▀▄${RESET}  ${BOLD}${fg(C.orange)}Pan Mesh${RESET}${DIM}${fg(C.gray)}  v0.1.0 · zero-g · AXL tool exchange${RESET}`);
+    const status = peers.length > 0 && peers[0].connected
+      ? fg(C.green) + '● Connected' + (peers[0].latencyMs > 0 ? ' ' + peers[0].latencyMs + 'ms' : '')
+      : peers.length > 0 ? fg(C.yellow) + '○ offline' : fg(C.gray) + '○ No peer';
+    out.push(`  ${fg(C.gray)}${myEns || agentName}${RESET} ${fg(C.gray)}· port ${myPort}   ${status}${RESET}`);
+    out.push('');
 
-    // Local panel
-    const localLines: string[] = [''];
+    // Panel width: leave margin on both sides
+    const panelW = Math.min(cols - 4, 76);
+    const leftW = Math.floor((panelW - 1) / 2);
+    const rightW = panelW - 1 - leftW;
+
+    // Local tools
+    const localLines: string[] = [];
     if (tools.length === 0) {
       localLines.push(`  ${fg(C.gray)}No tools yet.${RESET}`);
       localLines.push(`  ${fg(C.gray)}Run tasks to generate tools.${RESET}`);
     } else {
-      for (let i = 0; i < Math.min(tools.length, panelH - 3); i++) {
+      for (let i = 0; i < tools.length; i++) {
         const t = tools[i];
         const marker = selectedPanel === 'local' && i === selectedIndex ? `${fg(C.orange)}▸${RESET}` : ' ';
         const nm = selectedPanel === 'local' && i === selectedIndex ? `${BOLD}${fg(C.white)}${t.name}${RESET}` : `${fg(C.green)}${t.name}${RESET}`;
@@ -254,14 +271,14 @@ export async function startMesh(): Promise<void> {
       }
     }
 
-    // Peer panel
+    // Peer tools
     const peerTools = (peers.length > 0 ? peers[0].tools : []).map(t => ({ name: t.name, description: t.description, uses: t.uses ?? 0 }));
-    const peerLines: string[] = [''];
+    const peerLines: string[] = [];
     if (peerTools.length === 0) {
       peerLines.push(`  ${fg(C.gray)}No peer tools yet.${RESET}`);
       peerLines.push(`  ${fg(C.gray)}Peer will share when connected.${RESET}`);
     } else {
-      for (let i = 0; i < Math.min(peerTools.length, panelH - 3); i++) {
+      for (let i = 0; i < peerTools.length; i++) {
         const t = peerTools[i];
         const marker = selectedPanel === 'peer' && i === selectedIndex ? `${fg(C.cyan)}▸${RESET}` : ' ';
         const nm = selectedPanel === 'peer' && i === selectedIndex ? `${BOLD}${fg(C.white)}${t.name}${RESET}` : `${fg(C.green)}${t.name}${RESET}`;
@@ -272,42 +289,49 @@ export async function startMesh(): Promise<void> {
       }
     }
 
+    // Draw side-by-side panels
+    const lo = fg(C.orange);
+    const co = fg(C.cyan);
+    const lt = ` YOU (${(myEns || agentName).slice(0, 18)}) `;
+    const rt = peers.length > 0 ? ` PEER: ${(peers[0].ens).slice(0, 18)} ` : ' PEER: (searching...) ';
+
+    out.push(`${lo}┌${'─'.repeat(Math.max(leftW - lt.length - 2, 4))}${RESET}${BOLD}${lo}${lt}${RESET}${lo}┐${RESET}   ${co}┌${'─'.repeat(Math.max(rightW - rt.length - 2, 4))}${RESET}${BOLD}${co}${rt}${RESET}${co}┐${RESET}`);
+
+    const maxL = Math.max(localLines.length, peerLines.length);
+    for (let i = 0; i < maxL; i++) {
+      const ll = i < localLines.length ? localLines[i] : '';
+      const rl = i < peerLines.length ? peerLines[i] : '';
+      const lp = padRight(ll, leftW - 3);
+      const rp = padRight(rl, rightW - 3);
+      out.push(`${lo}│ ${RESET}${lp}${RESET}${lo} │${RESET}   ${co}│ ${RESET}${rp}${RESET}${co} │${RESET}`);
+    }
+
+    out.push(`${lo}└${'─'.repeat(Math.max(leftW - 2, 4))}┘${RESET}   ${co}└${'─'.repeat(Math.max(rightW - 2, 4))}┘${RESET}`);
+
     // Activity log
+    out.push('');
     const actLines: string[] = [''];
     if (activities.length === 0) {
       actLines.push(`  ${fg(C.gray)}No activity yet.${RESET}`);
     } else {
       for (const a of activities.slice(0, 4)) {
-        const icon = a.type === 'send' ? '○' : a.type === 'receive' ? '←' : a.type === 'error' ? '✗' : a.type === 'system' ? '◆' : '·';
+        const icon = a.type === 'send' ? 'o' : a.type === 'receive' ? 'in' : a.type === 'error' ? 'x' : a.type === 'system' ? '*' : '.';
         const c = a.type === 'send' ? C.yellow : a.type === 'receive' ? C.green : a.type === 'error' ? C.red : C.gray;
         actLines.push(`  ${fg(c)}${icon} ${a.time}${RESET}  ${fg(c)}${a.text}${RESET}`);
       }
     }
-
-    // Build full screen output
-    const out: string[] = [];
-    out.push(CLEAR + HIDE_CURSOR);
-    out.push(...headerLines);
-    out.push('');
-
-    const leftPanel = drawBox(localLines, halfW - 1, ` YOU (${myEns || agentName}) `, C.orange);
-    const rightPanel = drawBox(peerLines, halfW - 1, peers.length > 0 ? ` PEER: ${peers[0].ens} ` : ' PEER: (searching...) ', C.cyan);
-
-    for (let i = 0; i < Math.max(leftPanel.length, rightPanel.length); i++) {
-      const l = leftPanel[i] ?? (' ' + ' '.repeat(halfW - 4) + ' ');
-      const r = rightPanel[i] ?? (' ' + ' '.repeat(halfW - 4) + ' ');
-      out.push(l + ' ' + r);
+    out.push(`${fg(C.gray)}┌ Activity Log ${'─'.repeat(Math.max(cols - 17, 20))}┐${RESET}`);
+    for (const al of actLines) {
+      out.push(`${fg(C.gray)}│${RESET}${padRight(al, cols - 4)}${fg(C.gray)}│${RESET}`);
     }
+    out.push(`${fg(C.gray)}└${'─'.repeat(Math.max(cols - 14, 20))}┘${RESET}`);
 
+    // Help bar
     out.push('');
-    const actBox = drawBox(actLines, cols - 4, ' Activity Log ', C.gray);
-    out.push(...actBox);
-
-    out.push('');
-    const helpBar = drawBox([
-      `  ${fg(C.cyan)}[↑↓]${RESET} Navigate   ${fg(C.cyan)}[Tab]${RESET} Panel   ${fg(C.cyan)}[Enter]${RESET} Share/Import   ${fg(C.cyan)}[←→]${RESET} Jump   ${fg(C.cyan)}[r]${RESET} Refresh   ${fg(C.cyan)}[q]${RESET} Exit`,
-    ], cols - 4, '', C.darkGray);
-    out.push(...helpBar);
+    const helpText = ` [up/dn] Navigate  [tab] Panel  [enter] Share/Import  [r] Refresh  [q] Exit `;
+    out.push(`${fg(C.darkGray)}┌${'─'.repeat(Math.max(helpText.length, cols - 6))}┐${RESET}`);
+    out.push(`${fg(C.darkGray)}│${RESET}${padRight(helpText, cols - 4)}${fg(C.darkGray)}│${RESET}`);
+    out.push(`${fg(C.darkGray)}└${'─'.repeat(Math.max(helpText.length, cols - 6))}┘${RESET}`);
 
     process.stdout.write(out.join('\n') + SHOW_CURSOR + '\n');
   }
