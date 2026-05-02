@@ -26,9 +26,11 @@ export function printWelcome(options: WelcomeOptions): void {
   const cwd = muted(options.cwd.replace(process.env.USERPROFILE ?? '', '~'));
 
   console.log();
-  console.log(`${brand('  ██  ██')}     ${title}`);
-  console.log(`${brand('  ██████')}     ${subtitle}`);
-  console.log(`${brand('  ██  ██')}     ${cwd}`);
+  console.log(`${brand('  ██     ██')}     ${title}`);
+  console.log(`${brand('  ███   ███')}     ${subtitle}`);
+  console.log(`${brand('  ████ ████')}     ${cwd}`);
+  console.log(`${brand('  ██ ███ ██')}`);
+  console.log(`${brand('  ██  █  ██')}`);
   console.log();
   console.log(`  ${brand('/doctor')} ${muted('to verify keys and services')}`);
   console.log(`  ${brand('/model')}  ${muted('to switch decision model')}`);

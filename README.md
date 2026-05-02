@@ -55,6 +55,8 @@ Return the number 2 as JSON
 /exit
 ```
 
+You can also press `Ctrl+D` on an empty prompt to close the interactive shell.
+
 ## Common Commands
 
 Run a one-off task:
