@@ -6,7 +6,14 @@ import { defaultPanConfig, panConfigSchema, type PanConfig } from './schema.js';
 export async function loadConfig(cwd = process.cwd()): Promise<PanConfig> {
   const configPath = getConfigPath(cwd);
   const raw = await readFile(configPath, 'utf8');
-  return panConfigSchema.parse(JSON.parse(raw));
+  const parsed = panConfigSchema.parse(JSON.parse(raw));
+
+  const envPort = process.env.AXL_PORT ? Number.parseInt(process.env.AXL_PORT, 10) : NaN;
+  if (Number.isFinite(envPort) && envPort > 0) {
+    parsed.axl.port = envPort;
+  }
+
+  return parsed;
 }
 
 export async function writeDefaultConfig(cwd = process.cwd()): Promise<string> {

@@ -18,7 +18,6 @@ if (-not (Test-Path (Join-Path $projectRoot "node_modules"))) {
   corepack pnpm install
 }
 
-# Load .env
 $envFile = Join-Path $projectRoot ".env"
 if (Test-Path $envFile) {
   Get-Content $envFile | ForEach-Object {
@@ -30,13 +29,9 @@ if (Test-Path $envFile) {
   }
 }
 
-# Agent 1 always resolves its ENS from ZERO_G_PRIVATE_KEY (amirjaved.eth)
-$env:PAN_AGENT_ENS   = "auto"
-$env:PAN_RESOLVE_ENS = "true"
-# Make sure AGENT2 vars don't leak into Agent 1 identity
-$env:AGENT2_ENS_NAME = ""
+$env:PAN_AGENT_ENS = if ($env:AGENT1_ENS_NAME) { $env:AGENT1_ENS_NAME } else { "auto" }
+$env:PAN_RESOLVE_ENS = if ($env:AGENT1_ENS_NAME) { "false" } else { "true" }
 
-# Kill stale AXL node on port 9002 so it restarts with correct ENS identity
 $stale = Get-NetTCPConnection -LocalPort 9002 -State Listen -ErrorAction SilentlyContinue
 if ($stale) {
   $stalePid = $stale | Select-Object -ExpandProperty OwningProcess -First 1

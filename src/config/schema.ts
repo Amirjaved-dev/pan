@@ -9,7 +9,7 @@ export const panConfigSchema = z.object({
     autoStart: z.boolean().default(true),
   }),
   ens: z.object({
-    enabled: z.literal(true).default(true),
+    enabled: z.boolean().default(true),
     rpcUrl: z.string().url().default('https://sepolia.drpc.org'),
   }),
   sandbox: z.object({

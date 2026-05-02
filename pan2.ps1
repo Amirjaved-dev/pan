@@ -1,4 +1,4 @@
-﻿# Pan Agents - Terminal 2 (execute-agent.eth)
+﻿# Pan Agents - Terminal 2
 
 $ErrorActionPreference = "Stop"
 
@@ -18,7 +18,6 @@ if (-not (Test-Path (Join-Path $projectRoot "node_modules"))) {
   corepack pnpm install
 }
 
-# Load .env
 $envFile = Join-Path $projectRoot ".env"
 if (Test-Path $envFile) {
   Get-Content $envFile | ForEach-Object {
@@ -30,12 +29,12 @@ if (Test-Path $envFile) {
   }
 }
 
-# Agent 2 overrides
-if ($env:AGENT2_AXL_PORT)    { $env:AXL_PORT          = $env:AGENT2_AXL_PORT } else { $env:AXL_PORT = "9003" }
-if ($env:AGENT2_PRIVATE_KEY) { $env:ZERO_G_PRIVATE_KEY = $env:AGENT2_PRIVATE_KEY }
-if ($env:AGENT2_PRIVATE_KEY) { $env:ENS_PRIVATE_KEY    = $env:AGENT2_PRIVATE_KEY }
+$env:AXL_PORT = "9003"
+if ($env:AGENT2_PRIVATE_KEY) {
+  $env:ZERO_G_PRIVATE_KEY = $env:AGENT2_PRIVATE_KEY
+  $env:ENS_PRIVATE_KEY    = $env:AGENT2_PRIVATE_KEY
+}
 
-# Use AGENT2_ENS_NAME directly if set, else try on-chain detection
 if ($env:AGENT2_ENS_NAME) {
   $env:PAN_AGENT_ENS = $env:AGENT2_ENS_NAME
 } else {
@@ -45,7 +44,6 @@ if ($env:AGENT2_ENS_NAME) {
 
 $env:PAN_DEFAULT_AGENT = "execute-agent"
 
-# Kill stale AXL node on port 9003
 $stale = Get-NetTCPConnection -LocalPort $env:AXL_PORT -State Listen -ErrorAction SilentlyContinue
 if ($stale) {
   $stalePid = $stale | Select-Object -ExpandProperty OwningProcess -First 1
@@ -56,8 +54,8 @@ if ($stale) {
 
 Write-Host ""
 Write-Host "  Pan Agents - Terminal 2" -ForegroundColor Cyan
-Write-Host "  ENS      : $($env:PAN_AGENT_ENS)" -ForegroundColor Green
-Write-Host "  AXL Port : $($env:AXL_PORT)" -ForegroundColor Gray
+Write-Host "  Port     : $($env:AXL_PORT)" -ForegroundColor Gray
+Write-Host "  Agent    : $($env:PAN_DEFAULT_AGENT)" -ForegroundColor Gray
 Write-Host ""
 
 corepack pnpm exec tsx src/cli.ts @args
