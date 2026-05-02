@@ -2,11 +2,7 @@ import chalk from 'chalk';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
-import { createRequire } from 'node:module';
-import type * as BlessedType from 'blessed';
-
-const _require = createRequire(import.meta.url);
-const blessed = _require('blessed') as typeof BlessedType;
+import * as readlineCore from 'node:readline';
 import { loadConfig } from '../config/load-config.js';
 import { getAgentExperiencePath, getAgentLocalToolStorePath, getAgentLocalRegistryPath } from '../config/paths.js';
 import { ensureAxlRunning } from '../runtime/axl-autostart.js';
@@ -152,9 +148,45 @@ async function importReceivedTool(agentName: string, payload: ToolSharePayload):
     await writeFile(expPath, JSON.stringify(experiences, null, 2) + '\n', 'utf8');
 
     return true;
-  } catch (err) {
+  } catch {
     return false;
   }
+}
+
+// ── ANSI TUI helpers ──────────────────────────────────────────────────
+
+const ESC = '\x1B';
+const CLEAR = ESC + '[2J' + ESC + '[H';
+const HIDE_CURSOR = ESC + '[?25l';
+const SHOW_CURSOR = ESC + '[?25h';
+const RESET = ESC + '[0m';
+
+function fg(color: number): string { return ESC + `[38;5;${color}m`; }
+function bg(color: number): string { return ESC + `[48;5;${color}m`; }
+const BOLD = ESC + '[1m';
+const DIM = ESC + '[2m';
+
+const C = {
+  orange: 208,
+  cyan: 81,
+  green: 82,
+  yellow: 220,
+  red: 203,
+  gray: 245,
+  darkGray: 240,
+  white: 255,
+  blue: 111,
+};
+
+function drawBox(lines: string[], width: number, title?: string, borderColor?: number): string[] {
+  const bc = borderColor !== undefined ? fg(borderColor) : '';
+  const w = Math.max(width, 10);
+  const top = title
+    ? bc + '┌' + BOLD + fg(C.orange) + ' ' + title.padEnd(w - 2) + RESET + bc + '┐'
+    : bc + '┌' + '─'.repeat(w - 2) + '┐';
+  const bot = bc + '└' + '─'.repeat(w - 2) + '┘';
+  const padded = lines.map(l => bc + '│ ' + RESET + l + RESET + ' '.repeat(Math.max(0, w - l.length - 4)) + bc + ' │');
+  return [top, ...padded, bot];
 }
 
 export async function startMesh(): Promise<void> {
@@ -168,34 +200,8 @@ export async function startMesh(): Promise<void> {
   }
 
   if (!process.stdin.isTTY) {
-    throw new Error('Mesh requires an interactive terminal (stdin is not a TTY). Run this in a real terminal, not piped input.');
+    throw new Error('Mesh requires an interactive terminal.');
   }
-
-  let screen: BlessedType.Widgets.Screen;
-  try {
-    screen = blessed.screen({
-      smartCSR: true,
-      title: 'Pan Mesh',
-      terminal: 'xterm-256color',
-    });
-  } catch (err) {
-    throw new Error('Failed to create terminal screen: ' + (err instanceof Error ? err.message : String(err)));
-  }
-
-  screen.key(['escape', 'q'], () => {
-    if (process.stdin.isTTY) process.stdin.setRawMode(false);
-    screen.destroy();
-    process.stdout.write('\x1B[?25h\n');
-  });
-
-  let meshExited = false;
-  const exitMesh = () => {
-    if (meshExited) return;
-    meshExited = true;
-    if (process.stdin.isTTY) process.stdin.setRawMode(false);
-    try { screen.destroy(); } catch { /* already destroyed */ }
-    process.stdout.write('\x1B[?25h\x1Bc\n');
-  };
 
   const tools = await loadLocalTools(agentName);
   const toolDetails = await loadToolDetails(agentName);
@@ -209,171 +215,105 @@ export async function startMesh(): Promise<void> {
   const activities: ActivityEntry[] = [];
   let selectedPanel: 'local' | 'peer' = 'local';
   let selectedIndex = 0;
-  let statusText = peers.length > 0
-    ? (peers[0].connected ? '{green-fg}● Connected{/}' : '{yellow-fg}○ Waiting for peer{/}')
-    : '{gray-fg}○ No peer found{/}';
+  let running = true;
 
   function addActivity(text: string, type: ActivityEntry['type'] = 'info'): void {
     const now = new Date();
     activities.unshift({ time: now.toLocaleTimeString('en-US', { hour12: false }).slice(0, 5), text, type });
     if (activities.length > 50) activities.length = 50;
-    render();
-  }
-
-  const headerBox = blessed.box({
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-    tags: true,
-    border: { type: 'line' },
-    style: { border: { fg: '#de7a55' }, fg: '#c7d2fe' },
-    content: '',
-  });
-
-  function updateHeader(): void {
-    const lines = [
-      '',
-      ' {#de7a55-fg}▄▀▄{/}  {bold}{#de7a55-fg}Pan Mesh{/}{/}   {gray-fg}v0.1.0 · zero-g · AXL tool exchange{/}',
-      ` {gray-fg}${myEns || agentName}{/} {gray-fg}· port ${myPort}{/}   ${statusText}`,
-    ];
-    headerBox.setContent(lines.join('\n'));
-  }
-
-  const localPanel = blessed.box({
-    top: 4,
-    left: 0,
-    width: '50%',
-    bottom: 6,
-    tags: true,
-    border: { type: 'line' },
-    label: ` YOU (${myEns || agentName}) `,
-    style: {
-      border: { fg: selectedPanel === 'local' ? '#de7a55' : 'gray' },
-      label: { bg: selectedPanel === 'local' ? '#de7a55' : 'gray', fg: 'black', bold: true },
-    },
-    scrollable: true,
-    alwaysScroll: true,
-    keys: false,
-    mouse: true,
-  });
-
-  const peerPanel = blessed.box({
-    top: 4,
-    right: 0,
-    width: '50%',
-    bottom: 6,
-    tags: true,
-    border: { type: 'line' },
-    label: peers.length > 0
-      ? ' PEER: ' + peers[0].ens + ' '
-      : ' PEER: (searching...) ',
-    style: {
-      border: { fg: (selectedPanel as string) === 'peer' ? '#7dd3fc' : 'gray' },
-      label: { bg: (selectedPanel as string) === 'peer' ? '#7dd3fc' : 'gray', fg: 'black', bold: true },
-    },
-    scrollable: true,
-    alwaysScroll: true,
-    keys: false,
-    mouse: true,
-  });
-
-  const activityBar = blessed.box({
-    bottom: 3,
-    left: 1,
-    right: 1,
-    height: 4,
-    tags: true,
-    border: { type: 'line' },
-    style: { border: { fg: 'gray' }, fg: 'gray' },
-    label: ' Activity Log ',
-    content: '',
-  });
-
-  const helpBar = blessed.box({
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    tags: true,
-    border: { type: 'line' },
-    style: { border: { fg: 'gray' }, fg: 'gray' },
-    content: ` {bold}[↑↓]{/} Navigate  {bold}[Tab]{/} Panel  {bold}[Enter]{/} Share/Import  {bold}[←→]{/} Jump  {bold}[r]{/} Refresh  {bold}[q]{/} Exit `,
-  });
-
-  screen.append(headerBox);
-  screen.append(localPanel);
-  screen.append(peerPanel);
-  screen.append(activityBar);
-  screen.append(helpBar);
-
-  function renderTools(panel: BlessedType.Widgets.BoxElement, items: Array<{ name: string; description: string; uses: number }>, selectedIdx: number, isActive: boolean): void {
-    if (items.length === 0) {
-      panel.setContent('\n\n  {gray-fg}No tools yet.{/}\n  {gray-fg}Run tasks to generate tools.{/}\n');
-      return;
-    }
-
-    const lines: string[] = [''];
-    for (let i = 0; i < items.length; i++) {
-      const t = items[i];
-      const marker = i === selectedIdx && isActive ? '{#de7a55-fg}▸{/} ' : '  ';
-      const nameStyle = i === selectedIdx && isActive ? '{bold}{#c7d2ce-fg}' : '{green-fg}';
-      lines.push(`${marker}${nameStyle}${t.name}{/}`);
-      lines.push(`    {gray-fg}${t.description || '(no description)'}{/}`);
-      lines.push(`    {dark-gray-fg}Uses: ${t.uses}{/}`);
-      lines.push('');
-    }
-
-    panel.setContent(lines.join('\n'));
-  }
-
-  function renderActivities(): void {
-    if (activities.length === 0) {
-      activityBar.setContent('\n  {gray-fg}No activity yet.{/}\n');
-      return;
-    }
-
-    const recent = activities.slice(0, 4);
-    const lines = [''];
-    for (const a of recent) {
-      const icon = a.type === 'send' ? '○' : a.type === 'receive' ? '←' : a.type === 'error' ? '✗' : a.type === 'system' ? '◆' : '·';
-      const color = a.type === 'send' ? '#fbbf24' : a.type === 'receive' ? '#34d399' : a.type === 'error' ? '#f87171' : 'gray';
-      lines.push(`  {${color}-fg}${icon} ${a.time}{/}  {${color}-fg}${a.text}{/}`);
-    }
-    lines.push('');
-    activityBar.setContent(lines.join('\n'));
   }
 
   function render(): void {
-    updateHeader();
+    const cols = process.stdout.columns || 80;
+    const rows = process.stdout.rows || 24;
 
-    renderTools(localPanel, tools, selectedPanel === 'local' ? selectedIndex : -1, selectedPanel === 'local');
+    const halfW = Math.floor(cols / 2);
+    const panelH = rows - 11;
 
+    // Header
+    const headerLines = [
+      '',
+      `  ${fg(C.orange)}▄▀▄${RESET}  ${BOLD}${fg(C.orange)}Pan Mesh${RESET}${DIM}${fg(C.gray)}  v0.1.0 · zero-g · AXL tool exchange${RESET}`,
+      `  ${fg(C.gray)}${myEns || agentName}${RESET} ${fg(C.gray)}· port ${myPort}${RESET}   ${peers.length > 0 && peers[0].connected ? fg(C.green) + '● Connected' + (peers[0].latencyMs > 0 ? ' ' + peers[0].latencyMs + 'ms' : '') : peers.length > 0 ? fg(C.yellow) + '○ offline' : fg(C.gray) + '○ No peer'}${RESET}`,
+    ];
+
+    // Local panel
+    const localLines: string[] = [''];
+    if (tools.length === 0) {
+      localLines.push(`  ${fg(C.gray)}No tools yet.${RESET}`);
+      localLines.push(`  ${fg(C.gray)}Run tasks to generate tools.${RESET}`);
+    } else {
+      for (let i = 0; i < Math.min(tools.length, panelH - 3); i++) {
+        const t = tools[i];
+        const marker = selectedPanel === 'local' && i === selectedIndex ? `${fg(C.orange)}▸${RESET}` : ' ';
+        const nm = selectedPanel === 'local' && i === selectedIndex ? `${BOLD}${fg(C.white)}${t.name}${RESET}` : `${fg(C.green)}${t.name}${RESET}`;
+        localLines.push(`${marker} ${nm}`);
+        localLines.push(`    ${fg(C.darkGray)}${t.description || '(no description)'}${RESET}`);
+        localLines.push(`    ${fg(C.darkGray)}Uses: ${t.uses}${RESET}`);
+        localLines.push('');
+      }
+    }
+
+    // Peer panel
     const peerTools = (peers.length > 0 ? peers[0].tools : []).map(t => ({ name: t.name, description: t.description, uses: t.uses ?? 0 }));
-    renderTools(peerPanel, peerTools, selectedPanel === 'peer' ? selectedIndex : -1, selectedPanel === 'peer');
+    const peerLines: string[] = [''];
+    if (peerTools.length === 0) {
+      peerLines.push(`  ${fg(C.gray)}No peer tools yet.${RESET}`);
+      peerLines.push(`  ${fg(C.gray)}Peer will share when connected.${RESET}`);
+    } else {
+      for (let i = 0; i < Math.min(peerTools.length, panelH - 3); i++) {
+        const t = peerTools[i];
+        const marker = selectedPanel === 'peer' && i === selectedIndex ? `${fg(C.cyan)}▸${RESET}` : ' ';
+        const nm = selectedPanel === 'peer' && i === selectedIndex ? `${BOLD}${fg(C.white)}${t.name}${RESET}` : `${fg(C.green)}${t.name}${RESET}`;
+        peerLines.push(`${marker} ${nm}`);
+        peerLines.push(`    ${fg(C.darkGray)}${t.description || '(no description)'}${RESET}`);
+        peerLines.push(`    ${fg(C.darkGray)}Uses: ${t.uses}${RESET}`);
+        peerLines.push('');
+      }
+    }
 
-    const peerLabel = peers.length > 0
-      ? ' PEER: ' + peers[0].ens + (peers[0].connected
-        ? ' {green-fg}●{/} ' + peers[0].latencyMs + 'ms '
-        : ' {yellow-fg}○ offline{/} ')
-      : ' PEER: (searching...) ';
-    peerPanel.setLabel(peerLabel);
+    // Activity log
+    const actLines: string[] = [''];
+    if (activities.length === 0) {
+      actLines.push(`  ${fg(C.gray)}No activity yet.${RESET}`);
+    } else {
+      for (const a of activities.slice(0, 4)) {
+        const icon = a.type === 'send' ? '○' : a.type === 'receive' ? '←' : a.type === 'error' ? '✗' : a.type === 'system' ? '◆' : '·';
+        const c = a.type === 'send' ? C.yellow : a.type === 'receive' ? C.green : a.type === 'error' ? C.red : C.gray;
+        actLines.push(`  ${fg(c)}${icon} ${a.time}${RESET}  ${fg(c)}${a.text}${RESET}`);
+      }
+    }
 
-    renderActivities();
-    screen.render();
+    // Build full screen output
+    const out: string[] = [];
+    out.push(CLEAR + HIDE_CURSOR);
+    out.push(...headerLines);
+    out.push('');
+
+    const leftPanel = drawBox(localLines, halfW - 1, ` YOU (${myEns || agentName}) `, C.orange);
+    const rightPanel = drawBox(peerLines, halfW - 1, peers.length > 0 ? ` PEER: ${peers[0].ens} ` : ' PEER: (searching...) ', C.cyan);
+
+    for (let i = 0; i < Math.max(leftPanel.length, rightPanel.length); i++) {
+      const l = leftPanel[i] ?? (' ' + ' '.repeat(halfW - 4) + ' ');
+      const r = rightPanel[i] ?? (' ' + ' '.repeat(halfW - 4) + ' ');
+      out.push(l + ' ' + r);
+    }
+
+    out.push('');
+    const actBox = drawBox(actLines, cols - 4, ' Activity Log ', C.gray);
+    out.push(...actBox);
+
+    out.push('');
+    const helpBar = drawBox([
+      `  ${fg(C.cyan)}[↑↓]${RESET} Navigate   ${fg(C.cyan)}[Tab]${RESET} Panel   ${fg(C.cyan)}[Enter]${RESET} Share/Import   ${fg(C.cyan)}[←→]${RESET} Jump   ${fg(C.cyan)}[r]${RESET} Refresh   ${fg(C.cyan)}[q]${RESET} Exit`,
+    ], cols - 4, '', C.darkGray);
+    out.push(...helpBar);
+
+    process.stdout.write(out.join('\n') + SHOW_CURSOR + '\n');
   }
 
   async function refreshPeers(): Promise<void> {
     peers = await discoverPeers();
-
-    if (peers.length > 0 && peers[0].connected) {
-      statusText = '{green-fg}● Connected to ' + peers[0].ens + '{/}';
-      addActivity(`${peers[0].ens} is online`, 'system');
-    } else if (peers.length > 0) {
-      statusText = '{yellow-fg}○ ' + peers[0].ens + ' offline — waiting...{/}';
-    } else {
-      statusText = '{gray-fg}○ No peer found{/}';
-    }
 
     for (const peer of peers) {
       if (!peer.connected) continue;
@@ -421,117 +361,75 @@ export async function startMesh(): Promise<void> {
     }
   }
 
-  screen.key(['up', 'k'], () => {
-    const items = selectedPanel === 'local' ? tools : peers.length > 0 ? peers[0].tools : [];
-    if (items.length === 0) return;
-    selectedIndex = (selectedIndex - 1 + items.length) % items.length;
-    render();
-  });
+  async function requestFromPeer(): Promise<void> {
+    if (selectedPanel !== 'peer' || peers.length === 0 || peers[0].tools.length === 0) return;
+    const peerTool = peers[0].tools[selectedIndex];
+    if (!peerTool) return;
 
-  screen.key(['down', 'j'], () => {
-    const items = selectedPanel === 'local' ? tools : peers.length > 0 ? peers[0].tools : [];
-    if (items.length === 0) return;
-    selectedIndex = (selectedIndex + 1) % items.length;
-    render();
-  });
+    addActivity(`Requesting "${peerTool.name}" from ${peers[0].ens}...`, 'info');
 
-  screen.key(['tab'], () => {
-    selectedPanel = selectedPanel === 'local' ? 'peer' : 'local';
-    selectedIndex = 0;
-    render();
-  });
+    try {
+      const res = await fetch(`${peers[0].url}/recv`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-from-ens': myEns, 'x-to-ens': peers[0].ens },
+        body: JSON.stringify(createMeshMessage('tool_request', { tool: peerTool.name, toEns: peers[0].ens })),
+        signal: AbortSignal.timeout(5000),
+      });
 
-  screen.key(['enter', 'return'], async () => {
-    if (selectedPanel === 'local') {
-      await shareSelectedTool();
-    } else {
-      if (peers.length === 0 || peers[0].tools.length === 0) return;
-      const peerTool = peers[0].tools[selectedIndex];
-      if (!peerTool) return;
+      if (res.ok) {
+        await new Promise(r => setTimeout(r, 1000));
 
-      addActivity(`Requesting "${peerTool.name}" from ${peers[0].ens}...`, 'info');
-
-      try {
-        const res = await fetch(`${peers[0].url}/recv`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-from-ens': myEns, 'x-to-ens': peers[0].ens },
-          body: JSON.stringify(createMeshMessage('tool_request', { tool: peerTool.name, toEns: peers[0].ens })),
-          signal: AbortSignal.timeout(5000),
-        });
-
-        if (res.ok) {
-          await new Promise(r => setTimeout(r, 1000));
-
-          const msgRes = await fetch(`http://localhost:${myPort}/messages`, { signal: AbortSignal.timeout(3000) });
-          if (msgRes.ok) {
-            const msgs = await msgRes.json() as Array<{ message?: any }>;
-            const shareMsg = msgs.find(m => m.message?.type === 'tool_share' && m.message?.tool === peerTool.name);
-            if (shareMsg?.message?.payload) {
-              const imported = await importReceivedTool(agentName, shareMsg.message.payload as ToolSharePayload);
-              if (imported) {
-                addActivity(`Imported "${peerTool.name}" from ${peers[0].ens}`, 'receive');
-                tools.push({ name: peerTool.name, description: peerTool.description, uses: 1 });
-                render();
-              } else {
-                addActivity(`Failed to import "${peerTool.name}"`, 'error');
-              }
+        const msgRes = await fetch(`http://localhost:${myPort}/messages`, { signal: AbortSignal.timeout(3000) });
+        if (msgRes.ok) {
+          const msgs = await msgRes.json() as Array<{ message?: any }>;
+          const shareMsg = msgs.find(m => m.message?.type === 'tool_share' && m.message?.tool === peerTool.name);
+          if (shareMsg?.message?.payload) {
+            const imported = await importReceivedTool(agentName, shareMsg.message.payload as ToolSharePayload);
+            if (imported) {
+              addActivity(`Imported "${peerTool.name}" from ${peers[0].ens}`, 'receive');
+              tools.push({ name: peerTool.name, description: peerTool.description, uses: 1 });
+              render();
               return;
             }
           }
         }
-
-        addActivity(`No response for "${peerTool.name}" — peer may not have shared it yet`, 'error');
-      } catch {
-        addActivity(`Failed to request "${peerTool.name}"`, 'error');
       }
+
+      addActivity(`No response for "${peerTool.name}"`, 'error');
+    } catch {
+      addActivity(`Failed to request "${peerTool.name}"`, 'error');
     }
-  });
+  }
 
-  screen.key(['r'], async () => {
-    addActivity('Refreshing...', 'info');
-    await refreshPeers();
-  });
+  // ── Keyboard input loop ─────────────────────────────────────────────
 
-  screen.key(['left'], () => {
-    selectedPanel = 'local';
-    selectedIndex = 0;
-    render();
-  });
-
-  screen.key(['right'], () => {
-    selectedPanel = 'peer';
-    selectedIndex = 0;
-    render();
-  });
-
-  addActivity('Mesh mode started', 'system');
-  await refreshPeers();
+  render();
 
   if (peers.length > 0 && peers[0].connected) {
     const hs = await sendHandshake(peers[0].url, myEns);
     if (hs.ok) {
       addActivity(`Handshake with ${peers[0].ens}`, 'system');
-      if (hs.tools && hs.tools.length > 0) {
-        peers[0].tools = hs.tools;
-      }
+      if (hs.tools && hs.tools.length > 0) peers[0].tools = hs.tools;
     }
   }
 
   render();
 
+  const wasRaw = process.stdin.isRaw;
+  readlineCore.emitKeypressEvents(process.stdin);
+  if (process.stdin.isTTY) process.stdin.setRawMode(true);
+
   let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   let reconnectInterval: ReturnType<typeof setInterval> | null = null;
 
   heartbeatInterval = setInterval(async () => {
-    if (peers.length === 0) return;
+    if (!running || peers.length === 0) return;
     const peer = peers[0];
     if (!peer.connected) return;
 
     const ok = await sendHeartbeat(peer.url, myEns);
     if (!ok) {
       peer.connected = false;
-      peer.latencyMs = -1;
-      statusText = '{yellow-fg}○ ' + peer.ens + ' went offline — reconnecting...{/}';
       addActivity(`${peer.ens} went offline`, 'error');
       render();
     } else {
@@ -553,17 +451,16 @@ export async function startMesh(): Promise<void> {
             }
           }
         }
-      } catch { /* poll failed, skip */ }
+      } catch { /* skip */ }
     }
   }, 3000);
 
   reconnectInterval = setInterval(async () => {
-    if (peers.length === 0 || peers[0].connected) return;
+    if (!running || peers.length === 0 || peers[0].connected) return;
 
     const fresh = await discoverPeers();
     if (fresh.length > 0 && fresh[0].connected) {
       peers[0] = fresh[0];
-      statusText = '{green-fg}● Reconnected to ' + peers[0].ens + '{/}';
       const hs = await sendHandshake(peers[0].url, myEns);
       if (hs.ok) {
         if (hs.tools) peers[0].tools = hs.tools;
@@ -573,12 +470,71 @@ export async function startMesh(): Promise<void> {
     }
   }, 5000);
 
-  screen.on('destroy', () => {
+  function cleanup(): void {
+    running = false;
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (reconnectInterval) clearInterval(reconnectInterval);
+    process.stdin.removeListener('keypress', onKeypress);
+    if (process.stdin.isTTY) process.stdin.setRawMode(wasRaw ?? false);
+    process.stdout.write(SHOW_CURSOR + CLEAR + '\n');
     if (peers.length > 0 && peers[0].connected) {
       sendLeave(peers[0].url, myEns).catch(() => {});
     }
-    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+  }
+
+  function onKeypress(_char: string | undefined, key: readlineCore.Key): void {
+    if (key.ctrl && key.name === 'c') { cleanup(); return; }
+
+    if (key.name === 'q' || (key.name === 'escape' && !key.shift)) {
+      cleanup();
+      return;
+    }
+
+    const items = selectedPanel === 'local' ? tools : peers.length > 0 ? peers[0].tools : [];
+
+    if ((key.name === 'up' || key.name === 'k') && items.length > 0) {
+      selectedIndex = (selectedIndex - 1 + items.length) % items.length;
+      render();
+      return;
+    }
+
+    if ((key.name === 'down' || key.name === 'j') && items.length > 0) {
+      selectedIndex = (selectedIndex + 1) % items.length;
+      render();
+      return;
+    }
+
+    if (key.name === 'tab') {
+      selectedPanel = selectedPanel === 'local' ? 'peer' : 'local';
+      selectedIndex = 0;
+      render();
+      return;
+    }
+
+    if (key.name === 'return' || key.name === 'enter') {
+      if (selectedPanel === 'local') { shareSelectedTool().then(() => render()); }
+      else { requestFromPeer().then(() => render()); }
+      return;
+    }
+
+    if (key.name === 'r') {
+      addActivity('Refreshing...', 'info');
+      refreshPeers();
+      return;
+    }
+
+    if (key.name === 'left') {
+      selectedPanel = 'local'; selectedIndex = 0; render(); return;
+    }
+    if (key.name === 'right') {
+      selectedPanel = 'peer'; selectedIndex = 0; render(); return;
+    }
+  }
+
+  process.stdin.on('keypress', onKeypress);
+  process.stdin.resume();
+
+  return new Promise<void>((resolve) => {
+    // Keep alive until user exits
   });
 }

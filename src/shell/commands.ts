@@ -53,15 +53,7 @@ const commands: Record<string, { fn: ShellCommand; description: string }> = {
   },
   mesh: {
     fn: async () => {
-      if (process.stdin.isTTY) process.stdin.setRawMode(false);
-      process.stdout.write('\x1B[?25h\x1Bc');
-      try {
-        await startMesh();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(chalk.red(`  Mesh error: ${msg}`));
-        console.log(chalk.gray('  Make sure you are running in a real terminal (not piped/redirected).'));
-      }
+      await startMesh();
     },
     description: 'Enter live tool exchange TUI with peer agent',
   },

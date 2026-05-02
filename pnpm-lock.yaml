@@ -11,9 +11,6 @@ importers:
       '@zero-agents/core':
         specifier: ^0.1.1
         version: 0.1.1(@types/circomlibjs@0.1.6)(@types/crypto-js@4.2.2)(bufferutil@4.1.0)(circomlibjs@0.1.7(bufferutil@4.1.0)(utf-8-validate@5.0.10))(crypto-js@4.2.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(ws@8.18.3(bufferutil@4.1.0)(utf-8-validate@5.0.10))(zod@3.25.76)
-      blessed:
-        specifier: ^0.1.81
-        version: 0.1.81
       chalk:
         specifier: ^5.3.0
         version: 5.6.2
@@ -33,9 +30,6 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
-      '@types/blessed':
-        specifier: ^0.1.27
-        version: 0.1.27
       '@types/node':
         specifier: ^20.14.10
         version: 20.19.39
@@ -639,9 +633,6 @@ packages:
   '@scure/bip39@1.6.0':
     resolution: {integrity: sha512-+lF0BbLiJNwVlev4eKelw1WWLaiKXw7sSl8T6FvBlWkdX+94aGJ4o8XjUdlyhTCjd8c+B3KT3JfS8P0bLRNU6A==}
 
-  '@types/blessed@0.1.27':
-    resolution: {integrity: sha512-ZOQGjLvWDclAXp0rW5iuUBXeD6Gr1PkitN7tj7/G8FCoSzTsij6OhXusOzMKhwrZ9YlL2Pmu0d6xJ9zVvk+Hsg==}
-
   '@types/circomlibjs@0.1.6':
     resolution: {integrity: sha512-yF174bPDaiKgejlZzCSqKwZaqXhlxMcVEHrAtstFohwP05OjtvHXOdxO6HQeTg8WwIdgMg7MJb1WyWZdUCGlPQ==}
 
@@ -794,11 +785,6 @@ packages:
 
   blake2b@2.1.4:
     resolution: {integrity: sha512-AyBuuJNI64gIvwx13qiICz6H6hpmjvYS5DGkG6jbXMOT8Z3WUJ3V1X0FlhIoT1b/5JtHE3ki+xjtMvu1nn+t9A==}
-
-  blessed@0.1.81:
-    resolution: {integrity: sha512-LoF5gae+hlmfORcG1M5+5XZi4LBmvlXTzwJWzUlPryN/SJdSflZvROM2TwkT0GMpq7oqT48NRd4GS7BiVBc5OQ==}
-    engines: {node: '>= 0.8.0'}
-    hasBin: true
 
   bn.js@4.12.3:
     resolution: {integrity: sha512-fGTi3gxV/23FTYdAoUtLYp6qySe2KE3teyZitipKNRuVYcBkoP/bB3guXN/XVKUe9mxCHXnc9C4ocyz8OmgN0g==}
@@ -2610,10 +2596,6 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
 
-  '@types/blessed@0.1.27':
-    dependencies:
-      '@types/node': 20.19.39
-
   '@types/circomlibjs@0.1.6': {}
 
   '@types/crypto-js@4.2.2': {}
@@ -2796,8 +2778,6 @@ snapshots:
       nanoassert: 2.0.0
     transitivePeerDependencies:
       - react-native-b4a
-
-  blessed@0.1.81: {}
 
   bn.js@4.12.3: {}
 
