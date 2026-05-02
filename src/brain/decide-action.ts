@@ -60,7 +60,18 @@ function fallbackDecision(input: string): AgentDecision {
     };
   }
 
-  if (/\b(tool|tools|tooling)\b/i.test(lower)) {
+  if (/\b(tool|tools|tooling)\b/i.test(lower) || /\b(delete|remove|rm)\s+(all|every|everything)\b/i.test(lower)) {
+    if (/\b(delete|remove|rm|clear|wipe|purge)\b/i.test(lower)) {
+      const deleteAll = /\b(all|every|everything)\b/i.test(lower);
+      return {
+        intent: 'tool_management',
+        action: 'delete_tool',
+        confidence: 0.75,
+        reasoning: 'LLM unavailable; message asks to delete a tool.',
+        toolQuery: deleteAll ? 'all' : text.replace(/\b(delete|remove|rm|tool|tools|tooling|called|named)\b/gi, '').trim() || null,
+      };
+    }
+
     return {
       intent: 'tool_management',
       action: /\b(search|find)\b/i.test(lower) ? 'find_tool' : 'list_tools',

@@ -5,6 +5,7 @@ export const BUILT_IN_TOOLS = [
   'ask_clarifying_question: ask one short question when required details are missing',
   'list_tools: show generated tools remembered for the active agent',
   'find_tool: search generated tools by query',
+  'delete_tool: request deletion of one generated tool; execution layer must ask user approval first',
   'get_status: show agent/config/network status',
   'list_agents: show available agents',
   'switch_agent: switch active agent by name',
@@ -27,6 +28,7 @@ Decision rules:
 - Requests asking what you can do, what abilities you have, your capabilities, your features, or how you can help are capability questions. They must use respond_to_user and must never use use_or_create_tool.
 - Missing required task details use ask_clarifying_question with exactly one short question.
 - Tool inventory requests use list_tools or find_tool.
+- Tool deletion/removal requests use delete_tool with toolQuery set to the exact requested tool name. Never use use_or_create_tool for deleting tools.
 - Status/config/health requests use get_status.
 - Agent listing or switching requests use list_agents or switch_agent.
 - Concrete tasks that need live data, computation, automation, or generated reusable code use use_or_create_tool.
@@ -38,6 +40,7 @@ Examples:
 - "hy", "hi", "hello", "hii bro" -> respond_to_user.
 - "what can you do", "what abilities u have", "what are your capabilities", "how can you help me" -> respond_to_user.
 - "what tools are available" -> list_tools.
+- "delete tool get_btc_price" -> delete_tool with toolQuery "get_btc_price".
 - "what agents are available" -> list_agents.
 - "find current btc price" -> use_or_create_tool.
 - "return the number 2 as JSON" -> use_or_create_tool.
@@ -45,7 +48,7 @@ Examples:
 Return ONLY valid JSON with this exact shape:
 {
   "intent": "chat|question|task|tool_management|agent_management|status|clarification_needed|unsafe_or_invalid",
-  "action": "respond_to_user|ask_clarifying_question|list_tools|find_tool|get_status|list_agents|switch_agent|use_or_create_tool|plan_task",
+  "action": "respond_to_user|ask_clarifying_question|list_tools|find_tool|delete_tool|get_status|list_agents|switch_agent|use_or_create_tool|plan_task",
   "confidence": 0.0,
   "reasoning": "short private explanation",
   "userResponse": "direct answer when action is respond_to_user or plan_task, otherwise null",

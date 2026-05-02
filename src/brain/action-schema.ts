@@ -3,6 +3,7 @@ export const DECISION_ACTIONS = [
   'ask_clarifying_question',
   'list_tools',
   'find_tool',
+  'delete_tool',
   'get_status',
   'list_agents',
   'switch_agent',

@@ -17,7 +17,7 @@ async function loadEditableConfig(): Promise<PanConfig> {
   return panConfigSchema.parse(JSON.parse(raw));
 }
 
-function printModel(config: PanConfig): void {
+export function printModel(config: PanConfig): void {
   console.log();
   console.log(chalk.bold('  Decision Model:'));
   console.log(`  Provider: ${chalk.green(config.decision.provider)}`);
@@ -27,14 +27,14 @@ function printModel(config: PanConfig): void {
   console.log();
 }
 
-async function setProvider(provider: DecisionProvider): Promise<void> {
+export async function setDecisionProvider(provider: DecisionProvider): Promise<void> {
   const config = await loadEditableConfig();
   config.decision.provider = provider;
   await writeConfig(config);
   printModel(config);
 }
 
-async function setOpenRouterModel(model: string): Promise<void> {
+export async function setOpenRouterModel(model: string): Promise<void> {
   const config = await loadEditableConfig();
   config.decision.provider = 'openrouter';
   config.decision.openRouterModel = model;
@@ -56,6 +56,6 @@ export function createModelCommand(): Command {
       new Command('zero-g')
         .alias('og')
         .description('Use 0G Compute for intent decisions')
-        .action(async () => setProvider('zero-g')),
+        .action(async () => setDecisionProvider('zero-g')),
     );
 }

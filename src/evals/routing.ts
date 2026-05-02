@@ -64,6 +64,20 @@ const CASES: RoutingEvalCase[] = [
     taskMustBeNull: true,
   },
   {
+    name: 'tool delete routes to approval action',
+    input: 'delete tool get_btc_price',
+    action: 'delete_tool',
+    intent: 'tool_management',
+    taskMustBeNull: true,
+  },
+  {
+    name: 'delete all tools routes to bulk approval action',
+    input: 'delete all tools',
+    action: 'delete_tool',
+    intent: 'tool_management',
+    taskMustBeNull: true,
+  },
+  {
     name: 'personal knowledge answers directly',
     input: 'what u know about me',
     action: 'respond_to_user',

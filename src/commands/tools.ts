@@ -2,11 +2,11 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { ToolRegistry } from '@zero-agents/core';
 import { config as loadEnv } from 'dotenv';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { requireEnv } from '../identity/ens.js';
 import { loadAgent } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
-import { getAgentExperiencePath, getAgentRegistryPath } from '../config/paths.js';
+import { getAgentExperiencePath, getAgentLocalRegistryPath, getAgentLocalToolStorePath } from '../config/paths.js';
 import { withQuietConsole } from '../runtime/quiet-console.js';
 import { createLocalToolRegistryOptions } from '../runtime/tool-storage.js';
 
@@ -27,6 +27,30 @@ type LocalExperience = {
   createdAt?: number;
 };
 
+type LocalStore = {
+  blobs?: Record<string, Record<string, unknown>>;
+};
+
+type ToolDeletePreview = {
+  agent: string;
+  toolNames: string[];
+  experienceCount: number;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function readJsonFile<T>(path: string, fallback: T): Promise<T> {
+  const raw = await readFile(path, 'utf8').catch(() => null);
+  if (!raw) return fallback;
+  return JSON.parse(raw) as T;
+}
+
+async function writeJsonFile(path: string, value: unknown): Promise<void> {
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
 async function getLocalTools(agentName: string): Promise<Array<{ name: string; uses: number; lastTask?: string; lastUsedAt?: number }>> {
   const raw = await readFile(getAgentExperiencePath(agentName), 'utf8').catch(() => null);
   if (!raw) return [];
@@ -46,6 +70,27 @@ async function getLocalTools(agentName: string): Promise<Array<{ name: string; u
   }
 
   return Array.from(tools.values()).sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0));
+}
+
+export function isDeleteAllToolsQuery(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  return /\b(all|everything|every)\b/.test(normalized) || /\b(clear|wipe|purge)\b/.test(normalized);
+}
+
+export async function previewDeleteAllTools(options: { agent?: string }): Promise<ToolDeletePreview> {
+  const config = await loadConfig();
+  const agent = options.agent ?? config.defaultAgent;
+  await loadAgent(agent);
+
+  const tools = await getLocalTools(agent);
+  const experiences = await readJsonFile<{ experiences?: LocalExperience[] }>(getAgentExperiencePath(agent), { experiences: [] });
+
+  return {
+    agent,
+    toolNames: tools.map((tool) => tool.name),
+    experienceCount: experiences.experiences?.filter((experience) => Boolean(experience.toolUsed)).length ?? 0,
+  };
 }
 
 export async function cmdToolsList(options: { agent?: string }): Promise<void> {
@@ -129,6 +174,87 @@ export async function cmdToolsSearch(query: string, options: { agent?: string })
   }
 }
 
+export async function cmdToolsDelete(name: string, options: { agent?: string }): Promise<void> {
+  if (isDeleteAllToolsQuery(name)) {
+    await cmdToolsDeleteAll(options);
+    return;
+  }
+
+  const config = await loadConfig();
+  const agent = options.agent ?? config.defaultAgent;
+  await loadAgent(agent);
+
+  const registry = createRegistry(agent);
+  const tool = await withQuietConsole(() => registry.getToolByName(name));
+  if (!tool) {
+    console.log(chalk.yellow(`\n  Tool "${name}" not found for ${agent}.\n`));
+    return;
+  }
+
+  const storePath = getAgentLocalToolStorePath(agent);
+  const pointerPath = getAgentLocalRegistryPath(agent);
+  const experiencePath = getAgentExperiencePath(agent);
+  const store = await readJsonFile<LocalStore>(storePath, { blobs: {} });
+  const blobs = store.blobs ?? {};
+  const pointer = await readJsonFile<{ rootHash?: string }>(pointerPath, {});
+  const rootHash = (tool as { rootHash?: string }).rootHash;
+  let removedFromIndex = false;
+
+  if (pointer.rootHash && isRecord(blobs[pointer.rootHash])) {
+    const indexBlob = blobs[pointer.rootHash];
+    if (name in indexBlob) {
+      delete indexBlob[name];
+      removedFromIndex = true;
+    }
+
+    if (isRecord(indexBlob._history)) {
+      delete indexBlob._history[name];
+      if (Object.keys(indexBlob._history).length === 0) delete indexBlob._history;
+    }
+
+    const toolCount = Object.keys(indexBlob).filter((key) => !key.startsWith('_')).length;
+    indexBlob._meta = { updatedAt: Date.now(), count: toolCount };
+  }
+
+  if (rootHash && rootHash in blobs) {
+    delete blobs[rootHash];
+  }
+
+  const experiences = await readJsonFile<{ experiences?: LocalExperience[] }>(experiencePath, { experiences: [] });
+  const beforeExperienceCount = experiences.experiences?.length ?? 0;
+  experiences.experiences = (experiences.experiences ?? []).filter((experience) => experience.toolUsed !== name);
+
+  await writeJsonFile(storePath, { blobs });
+  await writeJsonFile(experiencePath, experiences);
+
+  const removedExperiences = beforeExperienceCount - experiences.experiences.length;
+  console.log(chalk.green(`\n  Deleted tool "${name}" from ${agent}.`));
+  if (removedFromIndex) console.log(chalk.gray('  Removed from local registry index.'));
+  if (rootHash) console.log(chalk.gray(`  Removed local tool blob: ${rootHash}`));
+  if (removedExperiences > 0) console.log(chalk.gray(`  Removed ${removedExperiences} matching experience record(s).`));
+  console.log();
+}
+
+export async function cmdToolsDeleteAll(options: { agent?: string }): Promise<void> {
+  const config = await loadConfig();
+  const agent = options.agent ?? config.defaultAgent;
+  await loadAgent(agent);
+
+  const storePath = getAgentLocalToolStorePath(agent);
+  const pointerPath = getAgentLocalRegistryPath(agent);
+  const experiencePath = getAgentExperiencePath(agent);
+  const preview = await previewDeleteAllTools({ agent });
+
+  await writeJsonFile(storePath, { blobs: {} });
+  await writeJsonFile(pointerPath, {});
+  await writeJsonFile(experiencePath, { experiences: [] });
+
+  console.log(chalk.green(`\n  Deleted all tools from ${agent}.`));
+  console.log(chalk.gray(`  Removed ${preview.toolNames.length} tool name(s).`));
+  console.log(chalk.gray(`  Removed ${preview.experienceCount} tool experience record(s).`));
+  console.log();
+}
+
 export function createToolsCommand(): Command {
   return new Command('tools')
     .description('Manage persisted 0G tools')
@@ -151,5 +277,13 @@ export function createToolsCommand(): Command {
         .argument('<query>', 'search query')
         .option('--agent <name>', 'agent name')
         .action(async (query: string, opts: { agent?: string }) => cmdToolsSearch(query, opts)),
+    )
+    .addCommand(
+      new Command('delete')
+        .alias('rm')
+        .description('Delete one tool, or all tools, from an agent')
+        .argument('<name>', 'tool name')
+        .option('--agent <name>', 'agent name')
+        .action(async (name: string, opts: { agent?: string }) => cmdToolsDelete(name, opts)),
     );
 }

@@ -43,7 +43,21 @@ function isVagueQuestion(input: string): boolean {
 
 function isToolManagement(input: string): boolean {
   const text = normalize(input);
-  return /\b(tool|tools|tooling)\b/.test(text) && /\b(show|list|find|search|available|availble|existing|have|what)\b/.test(text);
+  return (/\b(tool|tools|tooling)\b/.test(text) && /\b(show|list|find|search|available|availble|existing|have|what|delete|remove|rm)\b/.test(text)) ||
+    /\b(clear|wipe|purge)\s+(all\s+)?(tool|tools)\b/.test(text) ||
+    /\b(delete|remove|rm)\s+(all|every|everything)\b/.test(text);
+}
+
+function isToolDeleteRequest(input: string): boolean {
+  const text = normalize(input);
+  return (/\b(tool|tools|tooling)\b/.test(text) && /\b(delete|remove|rm|clear|wipe|purge)\b/.test(text)) ||
+    /\b(delete|remove|rm)\s+(all|every|everything)\b/.test(text);
+}
+
+function extractToolDeleteQuery(input: string): string | null {
+  if (/\b(all|every|everything)\b/i.test(input)) return 'all';
+  const query = input.replace(/\b(delete|remove|rm|tool|tools|tooling|called|named|please|the)\b/gi, '').trim();
+  return query || null;
 }
 
 function isStatusRequest(input: string): boolean {
@@ -93,6 +107,18 @@ export function guardDecision(input: string, decision: AgentDecision): AgentDeci
   }
 
   if (isToolManagement(input)) {
+    if (isToolDeleteRequest(input)) {
+      return {
+        ...decision,
+        intent: 'tool_management',
+        action: 'delete_tool',
+        confidence: Math.max(decision.confidence, 0.9),
+        reasoning: 'Guardrail: tool deletion must use the built-in approval-gated delete action.',
+        task: null,
+        toolQuery: decision.toolQuery ?? extractToolDeleteQuery(input),
+      };
+    }
+
     return {
       ...decision,
       intent: 'tool_management',

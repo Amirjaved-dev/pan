@@ -1,9 +1,9 @@
 import chalk from 'chalk';
+import * as readline from 'node:readline/promises';
 import { listAgents } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
 import { cmdNetworkStatus } from '../commands/network.js';
-import { cmdToolsList, cmdToolsSearch } from '../commands/tools.js';
-import { isCryptoMarketTask, runCryptoMarketTask } from '../runtime/crypto-market.js';
+import { cmdToolsDelete, cmdToolsDeleteAll, cmdToolsList, cmdToolsSearch, isDeleteAllToolsQuery, previewDeleteAllTools } from '../commands/tools.js';
 import { checkExecutionGate } from '../runtime/execution-gate.js';
 import { runTask } from '../runtime/run-task.js';
 import { writeTrace } from '../runtime/trace.js';
@@ -14,6 +14,43 @@ const MIN_EXECUTION_CONFIDENCE = 0.55;
 
 function printLine(message: string, color: 'cyan' | 'yellow' | 'gray' = 'cyan'): void {
   console.log(chalk[color](`  ${message}`));
+}
+
+async function askDeleteApproval(toolName: string, agentName: string): Promise<boolean> {
+  const deleteAll = isDeleteAllToolsQuery(toolName);
+  console.log();
+  if (deleteAll) {
+    const preview = await previewDeleteAllTools({ agent: agentName });
+    printLine(`Agent wants to delete ALL tools from ${agentName}.`, 'yellow');
+    printLine(`This will remove ${preview.toolNames.length} tool(s) and ${preview.experienceCount} experience record(s).`, 'gray');
+    for (const name of preview.toolNames.slice(0, 10)) {
+      printLine(`- ${name}`, 'gray');
+    }
+    if (preview.toolNames.length > 10) printLine(`...and ${preview.toolNames.length - 10} more`, 'gray');
+  } else {
+    printLine(`Agent wants to delete tool "${toolName}" from ${agentName}.`, 'yellow');
+    printLine('This removes the local registry entry, tool blob, and matching experience records.', 'gray');
+  }
+
+  if (!process.stdin.isTTY) {
+    printLine('Delete blocked: approval requires an interactive terminal.', 'yellow');
+    console.log();
+    return false;
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const approvalText = deleteAll ? 'DELETE ALL' : 'DELETE';
+    const answer = await rl.question(chalk.yellow(`  Type ${approvalText} to approve: `));
+    const approved = answer.trim() === approvalText;
+    if (!approved) {
+      printLine('Delete cancelled.', 'yellow');
+      console.log();
+    }
+    return approved;
+  } finally {
+    rl.close();
+  }
 }
 
 async function printStatus(ctx: ShellContext): Promise<void> {
@@ -114,6 +151,24 @@ export async function executeDecision(input: string, decision: AgentDecision, ct
         await cmdToolsList({ agent: ctx.agentName });
       }
       return;
+    case 'delete_tool': {
+      const toolName = decision.toolQuery ?? (typeof decision.params?.toolName === 'string' ? decision.params.toolName : null);
+      if (!toolName) {
+        console.log();
+        printLine('Which tool should I delete?', 'yellow');
+        console.log();
+        return;
+      }
+
+      if (await askDeleteApproval(toolName, ctx.agentName)) {
+        if (isDeleteAllToolsQuery(toolName)) {
+          await cmdToolsDeleteAll({ agent: ctx.agentName });
+        } else {
+          await cmdToolsDelete(toolName, { agent: ctx.agentName });
+        }
+      }
+      return;
+    }
     case 'get_status':
       await printStatus(ctx);
       return;
@@ -144,12 +199,6 @@ export async function executeDecision(input: string, decision: AgentDecision, ct
       }
 
       console.log();
-      if (isCryptoMarketTask(task)) {
-        await runCryptoMarketTask(task);
-        console.log();
-        return;
-      }
-
       await runTask(task, ctx.agentName);
       console.log();
       return;
