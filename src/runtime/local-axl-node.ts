@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
+import { readFile } from 'node:fs/promises';
 
 loadEnv();
 
@@ -114,6 +115,48 @@ async function main() {
 
   const messages: StoredMessage[] = [];
 
+  // ── Load real tools from local storage ────────────────────────────────────
+  async function loadRealTools(): Promise<Record<string, { name: string; description: string; version?: string; code?: string; schema?: unknown; tags?: string[] }>> {
+    const tools: Record<string, { name: string; description: string; version?: string; code?: string; schema?: unknown; tags?: string[] }> = {};
+    try {
+      const { getAgentLocalToolStorePath, getAgentLocalRegistryPath } = await import('../config/paths.js');
+      const agentSlug = agentEns.replace(/\s+/g, '-').toLowerCase() || 'auto-agent';
+      const storePath = getAgentLocalToolStorePath(agentSlug);
+      const registryPath = getAgentLocalRegistryPath(agentSlug);
+
+      const [storeRaw, regRaw] = await Promise.all([
+        readFile(storePath, 'utf8').catch(() => null),
+        readFile(registryPath, 'utf8').catch(() => null),
+      ]);
+
+      if (storeRaw && regRaw) {
+        const store = JSON.parse(storeRaw) as { blobs?: Record<string, Record<string, unknown>> };
+        const reg = JSON.parse(regRaw) as { rootHash?: string };
+        if (store.blobs?.[reg.rootHash ?? '']) {
+          const index = store.blobs[reg.rootHash!] as Record<string, unknown>;
+          for (const [name, hash] of Object.entries(index)) {
+            if (name.startsWith('_') || typeof hash !== 'string') continue;
+            const blob = store.blobs[hash];
+            if (blob && typeof blob === 'object' && !Array.isArray(blob)) {
+              tools[name] = {
+                name,
+                description: typeof (blob as any).description === 'string' ? (blob as any).description : '',
+                version: typeof (blob as any).version === 'string' ? (blob as any).version : undefined,
+                code: typeof (blob as any).code === 'string' ? (blob as any).code : undefined,
+                schema: (blob as any).schema,
+                tags: Array.isArray((blob as any).tags) ? (blob as any).tags : undefined,
+              };
+            }
+          }
+        }
+      }
+    } catch { /* return empty */ }
+    return tools;
+  }
+
+  const cachedRealTools = await loadRealTools();
+  const allTools = Object.keys(cachedRealTools).length > 0 ? cachedRealTools : DEMO_TOOLS;
+
   async function forwardToPeer(targetEns: string, body: unknown, fromEns: string): Promise<boolean> {
     const url = peerRegistry[targetEns];
     if (!url) return false;
@@ -173,7 +216,7 @@ async function main() {
 
       // ── Tool list (for mesh TUI) ─────────────────────────────────────────────
       if (req.method === 'GET' && url.pathname === '/tools') {
-        const toolList = Object.values(DEMO_TOOLS).map((t: any) => ({
+        const toolList = Object.values(allTools).map((t: any) => ({
           name: t.name,
           description: t.description,
           version: t.version ?? undefined,
@@ -209,19 +252,19 @@ async function main() {
             let tool: object | undefined;
             let matchedName = requestedTool;
 
-            if (/^(any|all|.*\btool\b.*)$/.test(requestedTool) || !DEMO_TOOLS[requestedTool]) {
-              const allTools = Object.entries(DEMO_TOOLS);
-              const exactMatch = allTools.find(([k]) => k.toLowerCase() === requestedTool);
-              const fuzzyMatch = allTools.find(([k, v]) =>
+            if (/^(any|all|.*\btool\b.*)$/.test(requestedTool) || !allTools[requestedTool]) {
+              const allEntries = Object.entries(allTools);
+              const exactMatch = allEntries.find(([k]) => k.toLowerCase() === requestedTool);
+              const fuzzyMatch = allEntries.find(([k, v]) =>
                 k.toLowerCase().includes(requestedTool) ||
                 requestedTool.includes(k.toLowerCase()) ||
                 ((v as any).description && typeof (v as any).description === 'string' && (v as any).description.toLowerCase().includes(requestedTool))
               );
               if (exactMatch) { [matchedName, tool] = exactMatch; }
               else if (fuzzyMatch) { [matchedName, tool] = fuzzyMatch; }
-              else if (allTools.length > 0) { [matchedName, tool] = allTools[0]; }
+              else if (allEntries.length > 0) { [matchedName, tool] = allEntries[0]; }
             } else {
-              tool = DEMO_TOOLS[requestedTool];
+              tool = allTools[requestedTool];
             }
 
             const reply = tool
