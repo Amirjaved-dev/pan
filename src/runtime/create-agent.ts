@@ -9,8 +9,10 @@ import { patchReflectionErrorResults } from './patch-reflection.js';
 import { patchToolSandboxDefaults } from './patch-sandbox.js';
 import { patchZeroAgentToolGeneration } from './patch-zero-agent.js';
 import { logAgentStep } from './step-logger.js';
-import { useLocalToolStorage } from './tool-storage.js';
+import { repairLocalToolStorage, useLocalToolStorage } from './tool-storage.js';
 import { ensureAxlRunning } from './axl-autostart.js';
+import { patchToolEvaluatorSmokeInputs } from './patch-evaluator.js';
+import { patchRegistrySearchSemantics } from './patch-registry-search.js';
 
 export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAgent> {
   loadEnv();
@@ -18,6 +20,7 @@ export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAg
   const config = await loadConfig();
   const resolvedAgentName = agentName ?? config.defaultAgent;
   const agent = await loadAgent(resolvedAgentName);
+  await repairLocalToolStorage(agent.name);
   const zeroGPrivateKey = requireEnv('ZERO_G_PRIVATE_KEY');
   const ensPrivateKey = requireEnv('ENS_PRIVATE_KEY');
   const rpcUrl = process.env.SEPOLIA_RPC_URL ?? config.ens.rpcUrl;
@@ -27,6 +30,8 @@ export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAg
   patchEnsSequentialWrites();
   patchReflectionErrorResults();
   patchToolSandboxDefaults();
+  patchToolEvaluatorSmokeInputs();
+  patchRegistrySearchSemantics();
   const identity = await createEnsIdentity({
     ensName: agent.ensName,
     privateKey: ensPrivateKey,
@@ -47,6 +52,7 @@ export async function createPanAgent(agentName?: string): Promise<SelfEvolvingAg
     experienceMemoryPath: getAgentExperiencePath(agent.name),
     allowUnsafeNodeVmFallback: config.sandbox.allowUnsafeNodeVmFallback,
     evolutionTimeoutMs: 180_000,
+    maxGenerationAttempts: 5,
     testCaseTimeoutMs: 15_000,
   });
 

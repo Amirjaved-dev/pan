@@ -19,6 +19,18 @@ function isErrorOutput(output: unknown): output is { error: string } {
   );
 }
 
+function validateToolCode(toolCode: string): string | null {
+  if (/YOUR[_-]?API[_-]?KEY|INSERT[_-]?API[_-]?KEY|apiKey=demo|apikey=demo/i.test(toolCode)) {
+    return 'Generated tool used a placeholder API key. Use only public endpoints that work without secrets, or return a clear unsupported-data-source error.';
+  }
+
+  if (/console\.(log|error|warn|info)\s*\(/.test(toolCode)) {
+    return 'Generated tool writes to console. Return structured data instead of logging.';
+  }
+
+  return null;
+}
+
 export function patchToolSandboxDefaults(): void {
   if (isPatched) {
     return;
@@ -28,6 +40,11 @@ export function patchToolSandboxDefaults(): void {
   const originalRun = prototype.run;
 
   prototype.run = async function run(toolCode: string, params: object, timeoutMs?: number): Promise<SandboxResult> {
+    const validationError = validateToolCode(toolCode);
+    if (validationError) {
+      return { success: false, error: validationError, output: null, executionTimeMs: 0 };
+    }
+
     const result = await originalRun.call(this, toolCode, params, timeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS);
 
     if (result.success && isErrorOutput(result.output)) {
