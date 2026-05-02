@@ -333,7 +333,7 @@ export async function startMesh(): Promise<void> {
     out.push(`${fg(C.darkGray)}│${RESET}${padRight(helpText, cols - 4)}${fg(C.darkGray)}│${RESET}`);
     out.push(`${fg(C.darkGray)}└${'─'.repeat(Math.max(helpText.length, cols - 6))}┘${RESET}`);
 
-    process.stdout.write(out.join('\n') + SHOW_CURSOR + '\n');
+    process.stdout.write(out.join('\n') + SHOW_CURSOR);
   }
 
   async function refreshPeers(): Promise<void> {
@@ -499,8 +499,14 @@ export async function startMesh(): Promise<void> {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (reconnectInterval) clearInterval(reconnectInterval);
     process.stdin.removeListener('keypress', onKeypress);
-    if (process.stdin.isTTY) process.stdin.setRawMode(wasRaw ?? false);
-    process.stdout.write(SHOW_CURSOR + CLEAR + '\n');
+    process.stdin.pause();
+    if (process.stdin.isTTY) {
+      try { process.stdin.setRawMode(wasRaw ?? false); } catch { /* ignore */ }
+      try { process.stdin.setEncoding('utf8'); } catch { /* ignore */ }
+    }
+    // Write cleanup codes to STDERR so they don't leak into REPL stdout
+    const restore = ESC + '[?25h' + ESC + 'c' + ESC + '[H' + ESC + '[2J';
+    process.stderr.write(restore);
     if (peers.length > 0 && peers[0].connected) {
       sendLeave(peers[0].url, myEns).catch(() => {});
     }
