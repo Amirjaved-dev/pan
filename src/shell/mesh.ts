@@ -1,8 +1,12 @@
-import * as blessed from 'blessed';
 import chalk from 'chalk';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import type * as BlessedType from 'blessed';
+
+const _require = createRequire(import.meta.url);
+const blessed = _require('blessed') as typeof BlessedType;
 import { loadConfig } from '../config/load-config.js';
 import { getAgentExperiencePath, getAgentLocalToolStorePath, getAgentLocalRegistryPath } from '../config/paths.js';
 import { ensureAxlRunning } from '../runtime/axl-autostart.js';
@@ -285,7 +289,7 @@ export async function startMesh(): Promise<void> {
   screen.append(activityBar);
   screen.append(helpBar);
 
-  function renderTools(panel: blessed.Widgets.BoxElement, items: Array<{ name: string; description: string; uses: number }>, selectedIdx: number, isActive: boolean): void {
+  function renderTools(panel: BlessedType.Widgets.BoxElement, items: Array<{ name: string; description: string; uses: number }>, selectedIdx: number, isActive: boolean): void {
     if (items.length === 0) {
       panel.setContent('\n\n  {gray-fg}No tools yet.{/}\n  {gray-fg}Run tasks to generate tools.{/}\n');
       return;
