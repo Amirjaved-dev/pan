@@ -167,17 +167,35 @@ export async function startMesh(): Promise<void> {
     await ensureAxlRunning({ port: config.axl.port, autoStart: config.axl.autoStart });
   }
 
-  const screen = blessed.screen({
-    smartCSR: true,
-    title: 'Pan Mesh',
-    terminal: 'xterm-256color',
-  });
+  if (!process.stdin.isTTY) {
+    throw new Error('Mesh requires an interactive terminal (stdin is not a TTY). Run this in a real terminal, not piped input.');
+  }
+
+  let screen: BlessedType.Widgets.Screen;
+  try {
+    screen = blessed.screen({
+      smartCSR: true,
+      title: 'Pan Mesh',
+      terminal: 'xterm-256color',
+    });
+  } catch (err) {
+    throw new Error('Failed to create terminal screen: ' + (err instanceof Error ? err.message : String(err)));
+  }
 
   screen.key(['escape', 'q'], () => {
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
     screen.destroy();
-    process.stdout.write('\n');
-    process.exit(0);
+    process.stdout.write('\x1B[?25h\n');
   });
+
+  let meshExited = false;
+  const exitMesh = () => {
+    if (meshExited) return;
+    meshExited = true;
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    try { screen.destroy(); } catch { /* already destroyed */ }
+    process.stdout.write('\x1B[?25h\x1Bc\n');
+  };
 
   const tools = await loadLocalTools(agentName);
   const toolDetails = await loadToolDetails(agentName);
@@ -561,5 +579,6 @@ export async function startMesh(): Promise<void> {
     if (peers.length > 0 && peers[0].connected) {
       sendLeave(peers[0].url, myEns).catch(() => {});
     }
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
   });
 }
