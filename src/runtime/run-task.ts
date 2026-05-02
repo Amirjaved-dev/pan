@@ -1,5 +1,6 @@
 import type { TaskRequest, TaskResult } from '@zero-agents/core';
 import chalk from 'chalk';
+import { cmdToolsDelete } from '../commands/tools.js';
 import { createPanAgent } from './create-agent.js';
 import { withQuietConsole, writeLine } from './quiet-console.js';
 import { PAN_SYSTEM_PROMPT } from './system-prompt.js';
@@ -15,10 +16,13 @@ function formatOutput(output: unknown): string {
 }
 
 function createTaskRequest(task: string): TaskRequest {
+  const normalizedTask = task.toLowerCase().replace(/\s+/g, ' ').trim();
   const terms = task.match(/\b[A-Za-z][A-Za-z0-9-]{1,12}\b/g) ?? [];
+  const stopWords = new Set(['a', 'an', 'and', 'ask', 'find', 'for', 'get', 'give', 'me', 'of', 'price', 'prices', 'quote', 'show', 'the', 'to']);
   const symbols = terms
-    .filter((term) => term.length <= 6 && /[A-Za-z]/.test(term))
-    .map((term) => term.toLowerCase());
+    .map((term) => term.toLowerCase())
+    .filter((term) => term.length <= 6 && /[A-Za-z]/.test(term) && !stopWords.has(term))
+    .filter((term, index, all) => all.indexOf(term) === index);
   const assetIds: Record<string, string> = {
     btc: 'bitcoin',
     eth: 'ethereum',
@@ -27,6 +31,9 @@ function createTaskRequest(task: string): TaskRequest {
     doge: 'dogecoin',
     xrp: 'ripple',
   };
+  const mappedAssetIds = Object.fromEntries(symbols.filter((symbol) => assetIds[symbol]).map((symbol) => [symbol, assetIds[symbol]]));
+  const primarySymbol = symbols.find((symbol) => assetIds[symbol]) ?? symbols[symbols.length - 1];
+  const primaryAssetId = primarySymbol ? assetIds[primarySymbol] : undefined;
   const requestedOutput = /\bjson\b/i.test(task) ? 'json' : /\b(markdown|table|csv|text)\b/i.exec(task)?.[1]?.toLowerCase();
 
   return {
@@ -40,13 +47,14 @@ Task execution notes:
     params: {
       query: task,
       task,
-      normalizedTask: task.toLowerCase().replace(/\s+/g, ' ').trim(),
+      normalizedTask,
       terms,
       ...(requestedOutput ? { requestedOutput } : {}),
       ...(symbols.length > 0 ? {
-        symbol: symbols[symbols.length - 1],
+        symbol: primarySymbol,
         symbols,
-        assetIds: Object.fromEntries(symbols.filter((symbol) => assetIds[symbol]).map((symbol) => [symbol, assetIds[symbol]])),
+        ...(Object.keys(mappedAssetIds).length > 0 ? { assetIds: mappedAssetIds } : {}),
+        ...(primaryAssetId ? { assetId: primaryAssetId, coinGeckoId: primaryAssetId } : {}),
       } : {}),
     },
   };
@@ -69,6 +77,7 @@ export async function runTask(task: string, agentName?: string): Promise<TaskRes
   const startedAt = Date.now();
 
   try {
+    writeLine(chalk.cyan(`[agent] Working on: ${task}`));
     const result = await withQuietConsole(() => agent.run(createTaskRequest(task)));
     const verification = verifyTaskResult(task, result);
     await writeTrace({
@@ -89,7 +98,14 @@ export async function runTask(task: string, agentName?: string): Promise<TaskRes
     writeLine(formatOutput(result.output));
     if (!verification.ok) {
       writeLine(chalk.yellow(`[verify] ${verification.reason ?? 'result failed verification'}`));
+      if (result.wasGenerated && result.toolUsed) {
+        writeLine(chalk.yellow(`[cleanup] Removing failed generated tool ${result.toolUsed}.`));
+        await cmdToolsDelete(result.toolUsed, { agent: agentName }).catch(() => undefined);
+      }
+      throw new Error(`Result verification failed: ${verification.reason ?? 'result failed verification'}`);
     }
+
+    writeLine(chalk.green('[done] Task verified.'));
 
     const strategy = formatStrategy(result);
     if (strategy) {
