@@ -1,6 +1,8 @@
 import * as blessed from 'blessed';
 import chalk from 'chalk';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { createHash } from 'node:crypto';
 import { loadConfig } from '../config/load-config.js';
 import { getAgentExperiencePath, getAgentLocalToolStorePath, getAgentLocalRegistryPath } from '../config/paths.js';
 import { ensureAxlRunning } from '../runtime/axl-autostart.js';
@@ -82,6 +84,73 @@ async function loadToolDetails(agentName: string): Promise<Map<string, { descrip
   } catch { /* no details available */ }
 
   return details;
+}
+
+async function importReceivedTool(agentName: string, payload: ToolSharePayload): Promise<boolean> {
+  try {
+    const storePath = getAgentLocalToolStorePath(agentName);
+    const registryPath = getAgentLocalRegistryPath(agentName);
+    const expPath = getAgentExperiencePath(agentName);
+
+    const storeRaw = await readFile(storePath, 'utf8').catch(() => null);
+    const store: { blobs?: Record<string, Record<string, unknown>> } = storeRaw ? JSON.parse(storeRaw) : { blobs: {} };
+    if (!store.blobs) store.blobs = {};
+
+    const toolBlob: Record<string, unknown> = {
+      name: payload.name,
+      description: payload.description,
+      version: payload.version ?? '1.0.0',
+      code: payload.code,
+      schema: payload.schema,
+      tags: payload.tags ?? [],
+      runtime: payload.runtime ?? 'node',
+      sourceAgent: payload.sourceAgent,
+      importedAt: Date.now(),
+    };
+
+    const blobHash = 'imported-' + createHash('sha256').update(JSON.stringify(toolBlob)).digest('hex').slice(0, 16);
+    store.blobs[blobHash] = toolBlob;
+
+    let indexHash: string | null = null;
+    const regRaw = await readFile(registryPath, 'utf8').catch(() => null);
+    if (regRaw) {
+      const reg = JSON.parse(regRaw) as { rootHash?: string };
+      indexHash = reg.rootHash ?? null;
+    }
+
+    const idxHash = indexHash ?? ('idx-' + createHash('sha256').update(agentName + Date.now()).digest('hex').slice(0, 16));
+    if (!store.blobs[idxHash]) {
+      store.blobs[idxHash] = { _meta: { updatedAt: Date.now(), count: 0 } };
+    }
+
+    const index = store.blobs[idxHash] as Record<string, unknown>;
+    index[payload.name] = blobHash;
+
+    const metaCount = Object.keys(index).filter(k => !k.startsWith('_')).length;
+    (index as any)._meta = { updatedAt: Date.now(), count: metaCount };
+
+    await mkdir(dirname(storePath), { recursive: true });
+    await writeFile(storePath, JSON.stringify(store, null, 2) + '\n', 'utf8');
+    await mkdir(dirname(registryPath), { recursive: true });
+    await writeFile(registryPath, JSON.stringify({ rootHash: idxHash }, null, 2) + '\n', 'utf8');
+
+    const expRaw = await readFile(expPath, 'utf8').catch(() => null);
+    const experiences = expRaw ? JSON.parse(expRaw) : { experiences: [] };
+    if (!Array.isArray(experiences.experiences)) experiences.experiences = [];
+    experiences.experiences.push({
+      toolUsed: payload.name,
+      task: `Imported from ${payload.sourceAgent ?? 'mesh peer'}`,
+      success: true,
+      qualityScore: payload.qualityScore ?? 0.8,
+      createdAt: Date.now(),
+    });
+    await mkdir(dirname(expPath), { recursive: true });
+    await writeFile(expPath, JSON.stringify(experiences, null, 2) + '\n', 'utf8');
+
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 export async function startMesh(): Promise<void> {
@@ -339,7 +408,45 @@ export async function startMesh(): Promise<void> {
     if (selectedPanel === 'local') {
       await shareSelectedTool();
     } else {
-      addActivity('Peer tool import coming in Phase 4', 'info');
+      if (peers.length === 0 || peers[0].tools.length === 0) return;
+      const peerTool = peers[0].tools[selectedIndex];
+      if (!peerTool) return;
+
+      addActivity(`Requesting "${peerTool.name}" from ${peers[0].ens}...`, 'info');
+
+      try {
+        const res = await fetch(`${peers[0].url}/recv`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-from-ens': myEns, 'x-to-ens': peers[0].ens },
+          body: JSON.stringify(createMeshMessage('tool_request', { tool: peerTool.name, toEns: peers[0].ens })),
+          signal: AbortSignal.timeout(5000),
+        });
+
+        if (res.ok) {
+          await new Promise(r => setTimeout(r, 1000));
+
+          const msgRes = await fetch(`http://localhost:${myPort}/messages`, { signal: AbortSignal.timeout(3000) });
+          if (msgRes.ok) {
+            const msgs = await msgRes.json() as Array<{ message?: any }>;
+            const shareMsg = msgs.find(m => m.message?.type === 'tool_share' && m.message?.tool === peerTool.name);
+            if (shareMsg?.message?.payload) {
+              const imported = await importReceivedTool(agentName, shareMsg.message.payload as ToolSharePayload);
+              if (imported) {
+                addActivity(`Imported "${peerTool.name}" from ${peers[0].ens}`, 'receive');
+                tools.push({ name: peerTool.name, description: peerTool.description, uses: 1 });
+                render();
+              } else {
+                addActivity(`Failed to import "${peerTool.name}"`, 'error');
+              }
+              return;
+            }
+          }
+        }
+
+        addActivity(`No response for "${peerTool.name}" — peer may not have shared it yet`, 'error');
+      } catch {
+        addActivity(`Failed to request "${peerTool.name}"`, 'error');
+      }
     }
   });
 
@@ -391,6 +498,24 @@ export async function startMesh(): Promise<void> {
       render();
     } else {
       peer.lastSeen = Date.now();
+
+      try {
+        const msgRes = await fetch(`http://localhost:${myPort}/messages`, { signal: AbortSignal.timeout(2000) });
+        if (msgRes.ok) {
+          const msgs = await msgRes.json() as Array<{ message?: any; fromEns?: string }>;
+          for (const m of msgs) {
+            if (m.message?.type === 'tool_share' && m.message?.payload) {
+              const payload = m.message.payload as ToolSharePayload;
+              const alreadyHave = tools.some(t => t.name === payload.name);
+              if (!alreadyHave) {
+                addActivity(`Received "${payload.name}" from ${m.fromEns || 'peer'}`, 'receive');
+                tools.push({ name: payload.name, description: payload.description, uses: payload.uses ?? 1 });
+                render();
+              }
+            }
+          }
+        }
+      } catch { /* poll failed, skip */ }
     }
   }, 3000);
 
