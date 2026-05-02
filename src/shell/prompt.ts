@@ -2,6 +2,7 @@ import chalk from 'chalk';
 
 type WelcomeOptions = {
   agentName: string;
+  ensName?: string;
   version: string;
   cwd: string;
   decisionProvider: string;
@@ -22,7 +23,8 @@ export function printWelcome(options: WelcomeOptions): void {
     : options.decisionProvider;
 
   const title = `${chalk.bold.white('Pan Agents')} ${muted(`v${options.version}`)}`;
-  const subtitle = `${muted(options.agentName)} ${faint('·')} ${muted(modelLabel)}`;
+  const ensLabel = options.ensName ? `${faint('·')} ${chalk.hex('#7dd3fc')(options.ensName)} ` : '';
+  const subtitle = `${muted(options.agentName)} ${faint('·')} ${muted(modelLabel)} ${ensLabel}`;
   const cwd = muted(options.cwd.replace(process.env.USERPROFILE ?? '', '~'));
 
   console.log();

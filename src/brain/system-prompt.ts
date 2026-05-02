@@ -11,6 +11,9 @@ export const BUILT_IN_TOOLS = [
   'switch_agent: switch active agent by name',
   'use_or_create_tool: complete a concrete task by reusing, improving, or creating a generated tool',
   'plan_task: produce a short plan for complex or requested planning work',
+  'share_tool_with_agent: share a specific tool over the AXL network with another agent by peer ID',
+  'send_message_to_agent: send a direct message over the AXL network to another agent by peer ID',
+  'run_network_demo: trigger a cinematic, simulated visual demonstration of two agents talking and sharing tools over the AXL network'
 ] as const;
 
 export const DECISION_SYSTEM_PROMPT = `${PAN_SYSTEM_PROMPT}
@@ -33,6 +36,9 @@ Decision rules:
 - Tool deletion/removal requests use delete_tool with toolQuery set to the exact requested tool name. Never use use_or_create_tool for deleting tools.
 - Status/config/health requests use get_status.
 - Agent listing or switching requests use list_agents or switch_agent.
+- Requests to run a demo, showcase the agents, or see a demonstration of agents talking and sharing tools use run_network_demo.
+- Requests to share a tool with another agent or node use share_tool_with_agent. You must set params.peerId and params.toolName.
+- Requests to send a message or talk to another agent or node use send_message_to_agent. You must set params.peerId and params.message.
 - Concrete tasks that need live data, computation, automation, or generated reusable code use use_or_create_tool.
 - For use_or_create_tool, set task to a precise executable task, not just the raw user text. If the user asks for a market price of a brand/product/subsidiary, resolve it to the public parent company and ticker when you are confident; otherwise ask a clarification question.
 - If the user asks for a plan or the work is multi-step but not yet asking you to execute, use plan_task.
@@ -50,11 +56,14 @@ Examples:
 - "what agents are available" -> list_agents.
 - "find current btc price" -> use_or_create_tool.
 - "return the number 2 as JSON" -> use_or_create_tool.
+- "show me a demo of agents talking", "show both agents talking and sharing tools" -> run_network_demo.
+- "share search-tool with axl-node-eu-west" -> share_tool_with_agent with params: { peerId: "axl-node-eu-west", toolName: "search-tool" }.
+- "send hi to pan-remote-482a" -> send_message_to_agent with params: { peerId: "pan-remote-482a", message: "hi" }.
 
 Return ONLY valid JSON with this exact shape:
 {
-  "intent": "chat|question|task|tool_management|agent_management|status|clarification_needed|unsafe_or_invalid",
-  "action": "respond_to_user|ask_clarifying_question|list_tools|find_tool|delete_tool|get_status|list_agents|switch_agent|use_or_create_tool|plan_task",
+  "intent": "chat|question|task|tool_management|agent_management|status|network_communication|clarification_needed|unsafe_or_invalid",
+  "action": "respond_to_user|ask_clarifying_question|list_tools|find_tool|delete_tool|get_status|list_agents|switch_agent|use_or_create_tool|plan_task|share_tool_with_agent|send_message_to_agent|run_network_demo",
   "confidence": 0.0,
   "reasoning": "short private explanation",
   "userResponse": "direct answer when action is respond_to_user or plan_task, otherwise null",

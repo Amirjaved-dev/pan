@@ -9,6 +9,9 @@ export const DECISION_ACTIONS = [
   'switch_agent',
   'use_or_create_tool',
   'plan_task',
+  'share_tool_with_agent',
+  'send_message_to_agent',
+  'run_network_demo',
 ] as const;
 
 export const DECISION_INTENTS = [
@@ -18,6 +21,7 @@ export const DECISION_INTENTS = [
   'tool_management',
   'agent_management',
   'status',
+  'network_communication',
   'clarification_needed',
   'unsafe_or_invalid',
 ] as const;

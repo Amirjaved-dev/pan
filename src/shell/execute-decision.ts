@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import * as readline from 'node:readline/promises';
 import { listAgents } from '../agents/store.js';
 import { loadConfig } from '../config/load-config.js';
-import { cmdNetworkStatus } from '../commands/network.js';
+import { cmdNetworkStatus, cmdNetworkSend, cmdNetworkShareTool, cmdNetworkDemo } from '../commands/network.js';
 import { cmdToolsDelete, cmdToolsDeleteAll, cmdToolsList, cmdToolsSearch, isDeleteAllToolsQuery, previewDeleteAllTools } from '../commands/tools.js';
 import { checkExecutionGate } from '../runtime/execution-gate.js';
 import { runTask } from '../runtime/run-task.js';
@@ -215,6 +215,37 @@ export async function executeDecision(input: string, decision: AgentDecision, ct
       console.log();
       return;
     }
+    case 'share_tool_with_agent': {
+      const peerId = typeof decision.params?.peerId === 'string' ? decision.params.peerId : null;
+      const toolName = typeof decision.params?.toolName === 'string' ? decision.params.toolName : null;
+      if (!peerId || !toolName) {
+        console.log();
+        printLine('I need both a peer ID and a tool name to share a tool.', 'yellow');
+        console.log();
+        return;
+      }
+      console.log();
+      await cmdNetworkShareTool(peerId, toolName);
+      console.log();
+      return;
+    }
+    case 'send_message_to_agent': {
+      const peerId = typeof decision.params?.peerId === 'string' ? decision.params.peerId : null;
+      const message = typeof decision.params?.message === 'string' ? decision.params.message : null;
+      if (!peerId || !message) {
+        console.log();
+        printLine('I need both a peer ID and a message to send.', 'yellow');
+        console.log();
+        return;
+      }
+      console.log();
+      await cmdNetworkSend(peerId, message);
+      console.log();
+      return;
+    }
+    case 'run_network_demo':
+      await cmdNetworkDemo();
+      return;
   }
 }
 

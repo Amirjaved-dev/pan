@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Claude Code-style CLI for autonomous agent workflows powered by 0G, ENS, and Gensyn AXL.",
   "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "bin": {
     "pan": "dist/cli.js"
   },

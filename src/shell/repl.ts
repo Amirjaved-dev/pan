@@ -170,7 +170,7 @@ export async function startRepl(): Promise<void> {
   if (config.axl.enabled) {
     await ensureAxlRunning({ port: config.axl.port, autoStart: config.axl.autoStart });
   }
-  let currentAgent = config.defaultAgent;
+  let currentAgent = process.env.PAN_DEFAULT_AGENT ?? config.defaultAgent;
   const recentMessages: string[] = [];
 
   const ctx: ShellContext = {
@@ -220,8 +220,23 @@ export async function startRepl(): Promise<void> {
     return;
   }
 
+  // Fetch resolved identity from the running AXL node
+  let resolvedEns: string | undefined;
+  if (config.axl.enabled) {
+    try {
+      const infoRes = await fetch(`http://localhost:${config.axl.port}/info`, {
+        signal: AbortSignal.timeout(3_000),
+      });
+      if (infoRes.ok) {
+        const info = await infoRes.json() as { ens?: string };
+        if (info.ens) resolvedEns = info.ens;
+      }
+    } catch { /* AXL not up yet — skip */ }
+  }
+
   printWelcome({
     agentName: currentAgent,
+    ensName: resolvedEns,
     version: '0.1.0',
     cwd: process.cwd(),
     decisionProvider: config.decision.provider,

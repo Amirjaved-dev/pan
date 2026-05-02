@@ -5,6 +5,7 @@ import { printModel, setDecisionProvider, setOpenRouterModel } from '../commands
 import { cmdToolsDelete, cmdToolsDeleteAll, cmdToolsList, cmdToolsSearch, isDeleteAllToolsQuery } from '../commands/tools.js';
 import { loadConfig } from '../config/load-config.js';
 import { executeSlashAgents, executeSlashNetwork, executeSlashStatus, executeSlashSwitchAgent } from './execute-decision.js';
+import { cmdNetworkSend, cmdNetworkShareTool, cmdNetworkMessages, cmdNetworkDemo, cmdNetworkRequestTool } from '../commands/network.js';
 
 export interface ShellContext {
   agentName: string;
@@ -43,9 +44,80 @@ const commands: Record<string, { fn: ShellCommand; description: string }> = {
     fn: async (args: string, ctx) => await cmdTools({ args, ctx }),
     description: 'List or search tools',
   },
+  demo: {
+    fn: async () => {
+      await cmdNetworkDemo();
+    },
+    description: 'Show live AXL multi-agent demo',
+  },
+  'request-tool': {
+    fn: async (args: string) => {
+      const trimmed = args.trim();
+      if (!trimmed) {
+        console.log(chalk.yellow('  Usage: /request-tool <tool-name> from <agent-ens>'));
+        console.log(chalk.gray('  Example: /request-tool data-scraper from execute-agent.eth'));
+        return;
+      }
+
+      const myEns = process.env.PAN_AGENT_ENS ?? '';
+      const allPeers = [process.env.AGENT1_ENS_NAME, process.env.AGENT2_ENS_NAME, 'execute-agent.eth', 'research-agent.eth'].filter((v): v is string => !!v);
+      const otherPeers = allPeers.filter(p => p.toLowerCase() !== myEns.toLowerCase());
+
+      let targetEns: string;
+      let rawToolName: string;
+
+      const fromMatch = trimmed.match(/^(.+?)\s+from\s+(.+)$/i);
+      if (fromMatch) {
+        rawToolName = fromMatch[1].trim();
+        targetEns   = fromMatch[2].trim();
+        if (/^(any|all|available|some|a\s+tool|tools?)$/i.test(targetEns)) {
+          targetEns = otherPeers[0] ?? allPeers[0] ?? targetEns;
+        }
+      } else {
+        const parts = trimmed.split(/\s+/).filter(Boolean);
+        const foundPeerIdx = parts.findIndex(p => allPeers.some(kp => kp.toLowerCase() === p.toLowerCase()));
+        if (foundPeerIdx >= 0) {
+          targetEns   = parts[foundPeerIdx];
+          rawToolName = parts.filter((_, i) => i !== foundPeerIdx).join(' ') || 'any';
+        } else if (parts.length >= 2 && parts[1].toLowerCase() === 'from' && parts.length >= 3) {
+          rawToolName = parts[0];
+          targetEns   = parts.slice(2).join(' ');
+        } else {
+          rawToolName = parts.join(' ');
+          targetEns   = otherPeers[0] ?? allPeers[0] ?? 'execute-agent.eth';
+        }
+      }
+
+      const toolName = rawToolName.replace(/^(get|fetch|request|find|give|show|list|search|grab)\s+/i, '').trim() || rawToolName;
+
+      if (targetEns.toLowerCase() === myEns.toLowerCase()) {
+        console.log(chalk.yellow(`  Cannot request tool from yourself (${myEns}). Requesting from ${otherPeers[0] ?? 'the other agent'} instead.`));
+        targetEns = otherPeers[0] ?? allPeers.find(p => p.toLowerCase() !== myEns.toLowerCase()) ?? targetEns;
+      }
+
+      console.log(chalk.gray(`  Resolved: requesting "${toolName}" from ${targetEns}`));
+      await cmdNetworkRequestTool(targetEns, toolName);
+    },
+    description: 'Request a tool from another agent via AXL',
+  },
   network: {
-    fn: () => executeSlashNetwork(),
-    description: 'Show AXL network status',
+    fn: async (args: string) => {
+      const parts = args.trim().split(/\s+/).filter(Boolean);
+      if (parts.length === 0 || parts[0] === 'status') {
+        await executeSlashNetwork();
+      } else if (parts[0] === 'messages') {
+        await cmdNetworkMessages();
+      } else if (parts[0] === 'demo') {
+        await cmdNetworkDemo();
+      } else if (parts[0] === 'send' && parts.length >= 3) {
+        await cmdNetworkSend(parts[1], parts.slice(2).join(' '));
+      } else if (parts[0] === 'share-tool' && parts.length >= 3) {
+        await cmdNetworkShareTool(parts[1], parts[2]);
+      } else {
+        console.log(chalk.yellow('  Usage: /network [status|messages|demo|send <peer> <msg>|share-tool <peer> <tool>]'));
+      }
+    },
+    description: 'Network status and messaging',
   },
   model: {
     fn: async (args: string) => cmdModel(args),

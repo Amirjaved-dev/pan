@@ -79,7 +79,6 @@ export async function ensureAxlRunning(options: { port: number; autoStart: boole
     env: {
       ...process.env,
       AXL_PORT: String(options.port),
-      AXL_PEER_ID: process.env.AXL_PEER_ID ?? `pan-local-${options.port}`,
     },
   });
   child.unref();
