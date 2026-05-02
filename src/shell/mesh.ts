@@ -187,6 +187,9 @@ export async function startMesh(): Promise<void> {
   const activities: ActivityEntry[] = [];
   let selectedPanel: 'local' | 'peer' = 'local';
   let selectedIndex = 0;
+  let statusText = peers.length > 0
+    ? (peers[0].connected ? '{green-fg}● Connected{/}' : '{yellow-fg}○ Waiting for peer{/}')
+    : '{gray-fg}○ No peer found{/}';
 
   function addActivity(text: string, type: ActivityEntry['type'] = 'info'): void {
     const now = new Date();
@@ -203,12 +206,17 @@ export async function startMesh(): Promise<void> {
     tags: true,
     border: { type: 'line' },
     style: { border: { fg: '#de7a55' }, fg: '#c7d2fe' },
-    content: [
+    content: '',
+  });
+
+  function updateHeader(): void {
+    const lines = [
       '',
       ' {#de7a55-fg}▄▀▄{/}  {bold}{#de7a55-fg}Pan Mesh{/}{/}   {gray-fg}v0.1.0 · zero-g · AXL tool exchange{/}',
-      ` {gray-fg}${myEns || agentName}{/} {gray-fg}· port ${myPort}{/}`,
-    ].join('\n'),
-  });
+      ` {gray-fg}${myEns || agentName}{/} {gray-fg}· port ${myPort}{/}   ${statusText}`,
+    ];
+    headerBox.setContent(lines.join('\n'));
+  }
 
   const localPanel = blessed.box({
     top: 4,
@@ -268,7 +276,7 @@ export async function startMesh(): Promise<void> {
     tags: true,
     border: { type: 'line' },
     style: { border: { fg: 'gray' }, fg: 'gray' },
-    content: ` {bold}[↑↓]{/} Navigate  {bold}[Tab]{/} Switch panel  {bold}[Enter]{/} Send/Import  {bold}[r]{/} Refresh  {bold}[q]{/} Exit `,
+    content: ` {bold}[↑↓]{/} Navigate  {bold}[Tab]{/} Panel  {bold}[Enter]{/} Share/Import  {bold}[←→]{/} Jump  {bold}[r]{/} Refresh  {bold}[q]{/} Exit `,
   });
 
   screen.append(headerBox);
@@ -315,6 +323,8 @@ export async function startMesh(): Promise<void> {
   }
 
   function render(): void {
+    updateHeader();
+
     renderTools(localPanel, tools, selectedPanel === 'local' ? selectedIndex : -1, selectedPanel === 'local');
 
     const peerTools = (peers.length > 0 ? peers[0].tools : []).map(t => ({ name: t.name, description: t.description, uses: t.uses ?? 0 }));
@@ -335,7 +345,12 @@ export async function startMesh(): Promise<void> {
     peers = await discoverPeers();
 
     if (peers.length > 0 && peers[0].connected) {
+      statusText = '{green-fg}● Connected to ' + peers[0].ens + '{/}';
       addActivity(`${peers[0].ens} is online`, 'system');
+    } else if (peers.length > 0) {
+      statusText = '{yellow-fg}○ ' + peers[0].ens + ' offline — waiting...{/}';
+    } else {
+      statusText = '{gray-fg}○ No peer found{/}';
     }
 
     for (const peer of peers) {
@@ -494,6 +509,7 @@ export async function startMesh(): Promise<void> {
     if (!ok) {
       peer.connected = false;
       peer.latencyMs = -1;
+      statusText = '{yellow-fg}○ ' + peer.ens + ' went offline — reconnecting...{/}';
       addActivity(`${peer.ens} went offline`, 'error');
       render();
     } else {
@@ -525,6 +541,7 @@ export async function startMesh(): Promise<void> {
     const fresh = await discoverPeers();
     if (fresh.length > 0 && fresh[0].connected) {
       peers[0] = fresh[0];
+      statusText = '{green-fg}● Reconnected to ' + peers[0].ens + '{/}';
       const hs = await sendHandshake(peers[0].url, myEns);
       if (hs.ok) {
         if (hs.tools) peers[0].tools = hs.tools;
