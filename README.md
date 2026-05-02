@@ -2,13 +2,7 @@
 
 Claude Code-style CLI for autonomous agent workflows powered by 0G Compute, 0G Storage, ENS, and Gensyn AXL.
 
-This repo is already configured for this Windows machine at:
-
-```powershell
-C:\Users\Amir\Desktop\pan agents
-```
-
-## Quick Start On This Machine
+## Quick Start
 
 Open PowerShell in the project folder:
 
@@ -35,7 +29,7 @@ PASS Tool sandbox: isolated-vm available
 PASS Gensyn AXL: reachable on port 9002
 ```
 
-If no external Gensyn AXL node is listening on port `9002`, Pan auto-starts a local AXL-compatible development node so the CLI and demo can still use `/info`, `/topology`, `/messages`, and `/send`.
+If no external AXL node is listening on port `9002`, Pan auto-starts a local AXL-compatible development node.
 
 Start the interactive shell:
 
@@ -51,13 +45,44 @@ Inside the shell, type:
 /agent
 /tools
 /network
+/share <tool-name>
+/import <tool-name>
+/peers
 Return the number 2 as JSON
 /exit
 ```
 
 You can also press `Ctrl+D` on an empty prompt to close the interactive shell.
 
-## Common Commands
+## Multi-Agent Networking
+
+Pan supports running multiple agent instances that discover each other automatically.
+
+**Terminal 1** — research agent:
+
+```powershell
+.\pan.ps1
+```
+
+**Terminal 2** — execute agent:
+
+```powershell
+.\pan2.ps1
+```
+
+Agents auto-discover peers on ports 9002-9010. Once connected:
+
+- `/peers` — list connected agents and their tools
+- `/share <tool-name>` — share a tool from your local store with all peers
+- `/import <tool-name>` — search peers for a tool and import it locally
+- `/request <tool-name>` — alias for `/import`
+- `/network status` — show AXL identity and peer connections
+- `/network messages` — check received messages
+- `/network send <peer-ens> <message>` — send a text message to a peer
+
+Tools are persisted to the local agent store and available immediately after import.
+
+## CLI Commands
 
 Run a one-off task:
 
@@ -65,55 +90,39 @@ Run a one-off task:
 .\pan.ps1 ask --agent auto-agent "Return the number 2 as JSON"
 ```
 
-List agents:
+Agent management:
 
 ```powershell
 .\pan.ps1 agent list
-```
-
-Show an agent:
-
-```powershell
 .\pan.ps1 agent show auto-agent
-```
-
-Create a new agent:
-
-```powershell
 .\pan.ps1 agent create research-agent --description "Research agent" --capabilities "research,summarize,compare"
 ```
 
-Show ENS identity:
+ENS identity:
 
 ```powershell
 .\pan.ps1 identity show auto-agent
-```
-
-Publish ENS identity records:
-
-```powershell
 .\pan.ps1 identity publish auto-agent
 ```
 
-List tools persisted on 0G Storage:
+Tool management (persisted on 0G Storage):
 
 ```powershell
 .\pan.ps1 tools list --agent auto-agent
-```
-
-Search tools:
-
-```powershell
 .\pan.ps1 tools search "number" --agent auto-agent
+.\pan.ps1 network share-tool <tool-name>
+.\pan.ps1 network import-tool <tool-name>
 ```
 
-Show AXL network status:
+Network:
 
 ```powershell
 .\pan.ps1 network status
+.\pan.ps1 network messages
+.\pan.ps1 network send <peer-ens> <message>
 ```
 
-Show or change the intent decision model:
+Decision model:
 
 ```powershell
 .\pan.ps1 model
@@ -122,6 +131,15 @@ Show or change the intent decision model:
 ```
 
 OpenRouter mode requires `OPENROUTER_API_KEY`. 0G mode uses `ZERO_G_PRIVATE_KEY`.
+
+## Architecture
+
+- `src/runtime/axl.ts` — shared AXL client: peer discovery, tool exchange, message helpers
+- `src/runtime/local-axl-node.ts` — local HTTP AXL node (auto-scans ports 9002-9010)
+- `src/runtime/axl-autostart.ts` — spawns AXL node as background process with logging
+- `src/commands/network.ts` — CLI network commands (status, send, share, import, messages)
+- `src/shell/commands.ts` — REPL slash commands (/share, /import, /peers, /request, /network)
+- `src/runtime/patch-sandbox.ts` — tool sandbox patches with HTTP error enrichment and EvolutionEngine retry
 
 ## Why Use `pan.ps1`?
 
@@ -171,36 +189,21 @@ Then retry:
 .\pan.ps1 doctor
 ```
 
-## If Something Fails
+## Troubleshooting
 
-Run:
+Run `.\pan.ps1 doctor` first. Fix the first failing check before running tasks.
 
-```powershell
-.\pan.ps1 doctor
-```
+- **Node runtime not 22 or 24**: keep `.local-node\node-v24.15.0-win-x64` in this project or install Node 24 globally.
+- **`isolated-vm` unavailable**: run `.\pan.ps1 doctor` through the launcher, not plain `pnpm dev` with Node 25.
+- **AXL unreachable**: Pan auto-starts a local node. Check `.pan-agents/axl-{port}.log` for errors.
+- **To disable auto-start**: set `.pan-agents/config.json` `axl.autoStart` to `false`.
+- **ENS publish fails**: verify Sepolia RPC and that the ENS wallet has Sepolia ETH.
+- **Peers not found**: make sure the other terminal (`pan2.ps1`) is running and its port is in 9002-9010.
 
-Fix the first failing check before running tasks.
-
-Most common causes:
-
-- Node runtime is not 22 or 24: keep `.local-node\node-v24.15.0-win-x64` in this project or install Node 24 globally.
-- `isolated-vm` unavailable: run `.\pan.ps1 doctor` through the launcher, not plain `pnpm dev` with Node 25.
-- AXL unreachable: start or keep the Gensyn AXL node listening on port `9002`.
-- To disable Pan's local AXL auto-start, set `.pan-agents/config.json` `axl.autoStart` to `false`.
-- ENS publish fails: verify Sepolia RPC and that the ENS wallet has Sepolia ETH.
-
-## Development Commands
-
-Build TypeScript:
+## Development
 
 ```powershell
-.\pan.ps1 --help
 corepack pnpm build
-```
-
-Run typecheck without emitting files:
-
-```powershell
 corepack pnpm typecheck
 ```
 
