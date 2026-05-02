@@ -130,15 +130,19 @@ export async function startMesh(): Promise<void> {
     top: 0,
     left: 0,
     right: 0,
-    height: 3,
+    height: 4,
     tags: true,
     border: { type: 'line' },
     style: { border: { fg: '#de7a55' }, fg: '#c7d2fe' },
-    content: ` {bold}{#de7a55-fg}◈ Pan Mesh{/}   {gray-fg}${myEns || agentName} · port ${myPort}{/}`,
+    content: [
+      '',
+      ' {#de7a55-fg}▄▀▄{/}  {bold}{#de7a55-fg}Pan Mesh{/}{/}   {gray-fg}v0.1.0 · zero-g · AXL tool exchange{/}',
+      ` {gray-fg}${myEns || agentName}{/} {gray-fg}· port ${myPort}{/}`,
+    ].join('\n'),
   });
 
   const localPanel = blessed.box({
-    top: 3,
+    top: 4,
     left: 0,
     width: '50%',
     bottom: 6,
@@ -156,14 +160,14 @@ export async function startMesh(): Promise<void> {
   });
 
   const peerPanel = blessed.box({
-    top: 3,
+    top: 4,
     right: 0,
     width: '50%',
     bottom: 6,
     tags: true,
     border: { type: 'line' },
     label: peers.length > 0
-      ? ` PEER: ${peers[0].ens} ${peers[0].connected ? '{green-fg}●{/}' : '{yellow-fg}○{/'} `
+      ? ' PEER: ' + peers[0].ens + ' '
       : ' PEER: (searching...) ',
     style: {
       border: { fg: (selectedPanel as string) === 'peer' ? '#7dd3fc' : 'gray' },
@@ -177,11 +181,13 @@ export async function startMesh(): Promise<void> {
 
   const activityBar = blessed.box({
     bottom: 3,
-    left: 2,
-    right: 2,
-    height: 3,
+    left: 1,
+    right: 1,
+    height: 4,
     tags: true,
-    style: { fg: 'gray' },
+    border: { type: 'line' },
+    style: { border: { fg: 'gray' }, fg: 'gray' },
+    label: ' Activity Log ',
     content: '',
   });
 
@@ -204,7 +210,7 @@ export async function startMesh(): Promise<void> {
 
   function renderTools(panel: blessed.Widgets.BoxElement, items: Array<{ name: string; description: string; uses: number }>, selectedIdx: number, isActive: boolean): void {
     if (items.length === 0) {
-      panel.setContent(`\n\n  {gray-fg}No tools found.{/}\n  {gray-fg}Run tasks to generate tools.{/}`);
+      panel.setContent('\n\n  {gray-fg}No tools yet.{/}\n  {gray-fg}Run tasks to generate tools.{/}\n');
       return;
     }
 
@@ -214,7 +220,8 @@ export async function startMesh(): Promise<void> {
       const marker = i === selectedIdx && isActive ? '{#de7a55-fg}▸{/} ' : '  ';
       const nameStyle = i === selectedIdx && isActive ? '{bold}{#c7d2ce-fg}' : '{green-fg}';
       lines.push(`${marker}${nameStyle}${t.name}{/}`);
-      lines.push(`    {gray-fg}${t.description || '(no description)'}{/}{gray-fg} · Uses: ${t.uses}{/}`);
+      lines.push(`    {gray-fg}${t.description || '(no description)'}{/}`);
+      lines.push(`    {dark-gray-fg}Uses: ${t.uses}{/}`);
       lines.push('');
     }
 
@@ -223,16 +230,18 @@ export async function startMesh(): Promise<void> {
 
   function renderActivities(): void {
     if (activities.length === 0) {
-      activityBar.setContent('');
+      activityBar.setContent('\n  {gray-fg}No activity yet.{/}\n');
       return;
     }
 
-    const recent = activities.slice(0, 3);
-    const lines = recent.map(a => {
+    const recent = activities.slice(0, 4);
+    const lines = [''];
+    for (const a of recent) {
       const icon = a.type === 'send' ? '○' : a.type === 'receive' ? '←' : a.type === 'error' ? '✗' : a.type === 'system' ? '◆' : '·';
       const color = a.type === 'send' ? '#fbbf24' : a.type === 'receive' ? '#34d399' : a.type === 'error' ? '#f87171' : 'gray';
-      return `{${color}-fg}${icon} ${a.time}  ${a.text}{/}`;
-    });
+      lines.push(`  {${color}-fg}${icon} ${a.time}{/}  {${color}-fg}${a.text}{/}`);
+    }
+    lines.push('');
     activityBar.setContent(lines.join('\n'));
   }
 
@@ -243,8 +252,10 @@ export async function startMesh(): Promise<void> {
     renderTools(peerPanel, peerTools, selectedPanel === 'peer' ? selectedIndex : -1, selectedPanel === 'peer');
 
     const peerLabel = peers.length > 0
-      ? ' PEER: ' + peers[0].ens + ' ' + (peers[0].connected ? '{green-fg}● ' + peers[0].latencyMs + 'ms{/}' : '{yellow-fg}○ offline{/} ')
-      : ' PEER: (no peer found) ';
+      ? ' PEER: ' + peers[0].ens + (peers[0].connected
+        ? ' {green-fg}●{/} ' + peers[0].latencyMs + 'ms '
+        : ' {yellow-fg}○ offline{/} ')
+      : ' PEER: (searching...) ';
     peerPanel.setLabel(peerLabel);
 
     renderActivities();
