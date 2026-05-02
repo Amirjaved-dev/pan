@@ -6,6 +6,7 @@ import { cmdToolsDelete, cmdToolsDeleteAll, cmdToolsList, cmdToolsSearch, isDele
 import { loadConfig } from '../config/load-config.js';
 import { executeSlashAgents, executeSlashNetwork, executeSlashStatus, executeSlashSwitchAgent } from './execute-decision.js';
 import { cmdNetworkSend, cmdNetworkShareTool, cmdNetworkMessages, cmdNetworkDemo, cmdNetworkRequestTool } from '../commands/network.js';
+import { startMesh } from './mesh.js';
 
 export interface ShellContext {
   agentName: string;
@@ -49,6 +50,12 @@ const commands: Record<string, { fn: ShellCommand; description: string }> = {
       await cmdNetworkDemo();
     },
     description: 'Show live AXL multi-agent demo',
+  },
+  mesh: {
+    fn: async () => {
+      await startMesh();
+    },
+    description: 'Enter live tool exchange TUI with peer agent',
   },
   'request-tool': {
     fn: async (args: string) => {

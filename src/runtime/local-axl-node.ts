@@ -171,6 +171,17 @@ async function main() {
         return;
       }
 
+      // ── Tool list (for mesh TUI) ─────────────────────────────────────────────
+      if (req.method === 'GET' && url.pathname === '/tools') {
+        const toolList = Object.values(DEMO_TOOLS).map((t: any) => ({
+          name: t.name,
+          description: t.description,
+          version: t.version ?? undefined,
+        }));
+        writeJson(res, 200, { tools: toolList, ens: agentEns });
+        return;
+      }
+
       // ── Receive from another AXL node (cross-terminal) ─────────────────────
       if (req.method === 'POST' && url.pathname === '/recv') {
         const msgBody = await readBody(req);
