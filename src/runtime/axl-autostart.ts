@@ -13,17 +13,16 @@ type AxlStatus = {
 const STARTUP_TIMEOUT_MS = 5_000;
 
 async function canReachAxl(port: number): Promise<boolean> {
-  for (const path of ['/info', '/topology']) {
+  for (const path of ['/health', '/info']) {
     try {
       const response = await fetch(`http://localhost:${port}${path}`, {
         signal: AbortSignal.timeout(1_000),
       });
       if (response.ok) return true;
     } catch {
-      // Try the next compatible endpoint.
+      // Try next endpoint
     }
   }
-
   return false;
 }
 
@@ -72,15 +71,33 @@ export async function ensureAxlRunning(options: { port: number; autoStart: boole
 
   const extension = import.meta.url.endsWith('.ts') ? '.ts' : '.js';
   const nodePath = fileURLToPath(new URL(`./local-axl-node${extension}`, import.meta.url));
+  const logPath = join(getPanDir(), `axl-${options.port}.log`);
+
   const child = spawn(process.execPath, [tsxCli, nodePath, String(options.port)], {
     cwd: process.cwd(),
     detached: true,
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
       AXL_PORT: String(options.port),
     },
   });
+
+  if (child.stdout) {
+    child.stdout.on('data', (data: Buffer) => {
+      appendLog(logPath, data.toString());
+    });
+  }
+  if (child.stderr) {
+    child.stderr.on('data', (data: Buffer) => {
+      appendLog(logPath, `[stderr] ${data.toString()}`);
+    });
+  }
+
+  child.on('exit', (code) => {
+    appendLog(logPath, `[axl] exited with code ${code ?? 'unknown'}`);
+  });
+
   child.unref();
   await writePidFile(options.port, child.pid ?? 0).catch(() => undefined);
 
@@ -89,5 +106,14 @@ export async function ensureAxlRunning(options: { port: number; autoStart: boole
   }
 
   const pidDetail = previousPid ? `; previous pid was ${previousPid}` : '';
-  return { running: false, started: true, detail: `auto-start attempted but port ${options.port} did not become reachable${pidDetail}` };
+  return { running: false, started: true, detail: `auto-start attempted but port ${options.port} did not become reachable${pidDetail}. Check .pan-agents/axl-${options.port}.log for errors.` };
+}
+
+async function appendLog(path: string, text: string): Promise<void> {
+  try {
+    const ts = new Date().toISOString();
+    await mkdir(dirname(path), { recursive: true });
+    const { appendFile } = await import('node:fs/promises');
+    await appendFile(path, `[${ts}] ${text}\n`, 'utf8');
+  } catch { /* ignore */ }
 }
