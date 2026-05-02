@@ -16,7 +16,10 @@ type StoredMessage = {
 
 const port = Number.parseInt(process.env.AXL_PORT ?? process.argv[2] ?? '9002', 10);
 
-// ── Resolve ENS identity from private key (or use explicit env override) ─────
+const SCAN_PORTS = [9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9010];
+
+type ToolEntry = { name: string; description: string; version?: string; code?: string; schema?: unknown; tags?: string[] };
+
 async function resolveIdentity(): Promise<string> {
   const explicit = process.env.PAN_AGENT_ENS;
   if (explicit && explicit !== 'auto') return explicit;
@@ -26,46 +29,19 @@ async function resolveIdentity(): Promise<string> {
     const rpc = process.env.SEPOLIA_RPC_URL ?? 'https://sepolia.drpc.org';
     if (key && key !== '0xYOUR_AGENT2_PRIVATE_KEY_HERE') {
       try {
-        // Try to get ENS name (and wallet address) from the key
         const { ENSIdentityManager } = await import('@zero-agents/core');
         const identity = await ENSIdentityManager.autoDetect(key, rpc);
-        // Use ENS name if available, otherwise derive from wallet address
         if (identity?.ensName) return identity.ensName;
         if (identity && 'address' in identity && typeof (identity as any).address === 'string') {
           const addr = (identity as any).address as string;
           return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
         }
       } catch { /* fall through */ }
-
-      // Last resort: try detectEnsName directly
-      try {
-        const { detectEnsName } = await import('../identity/ens.js');
-        return await detectEnsName(key, rpc);
-      } catch { /* no ENS name */ }
     }
   }
 
   return `pan-local-${randomUUID().slice(0, 8)}`;
 }
-
-// ── Tool registry (pre-loaded in Agent 2) ────────────────────────────────────
-const DEMO_TOOLS: Record<string, object> = {
-  'data-scraper': {
-    name: 'data-scraper', version: '1.0.2',
-    description: 'Scrapes structured data from any URL',
-    runtime: 'node', cid: `0g-cid-${randomUUID().slice(0, 8)}`,
-  },
-  'web-search': {
-    name: 'web-search', version: '2.1.0',
-    description: 'Performs live web searches and returns ranked results',
-    runtime: 'node', cid: `0g-cid-${randomUUID().slice(0, 8)}`,
-  },
-  'price-fetcher': {
-    name: 'price-fetcher', version: '1.3.1',
-    description: 'Fetches live crypto and stock prices from multiple sources',
-    runtime: 'node', cid: `0g-cid-${randomUUID().slice(0, 8)}`,
-  },
-};
 
 function writeJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
@@ -87,88 +63,133 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(raw);
 }
 
-// ── Main: resolve identity first, then start server ──────────────────────────
-async function main() {
-  const agentEns = await resolveIdentity();
-  const peerId = process.env.AXL_PEER_ID ?? agentEns;
+async function scanForPeers(myPort: number): Promise<Array<{ ens: string; port: number; url: string }>> {
+  const results = await Promise.all(
+    SCAN_PORTS
+      .filter(p => p !== myPort)
+      .map(async (p) => {
+        try {
+          const res = await fetch(`http://127.0.0.1:${p}/health`, { signal: AbortSignal.timeout(1000) });
+          if (!res.ok) return null;
+          const data = await res.json() as { ens?: string };
+          return { ens: data.ens ?? `agent-${p}.eth`, port: p, url: `http://127.0.0.1:${p}` };
+        } catch {
+          return null;
+        }
+      }),
+  );
+  return results.filter((r): r is NonNullable<typeof r> => r != null);
+}
 
-  // ── Peer registry: ENS → AXL URL (auto-built from env vars) ────────────────
-  const peerRegistry: Record<string, string> = {};
-  if (process.env.AGENT1_ENS_NAME && process.env.AGENT1_AXL_PORT) {
-    peerRegistry[process.env.AGENT1_ENS_NAME] = `http://127.0.0.1:${process.env.AGENT1_AXL_PORT}`;
-  }
-  if (process.env.AGENT2_ENS_NAME && process.env.AGENT2_AXL_PORT) {
-    peerRegistry[process.env.AGENT2_ENS_NAME] = `http://127.0.0.1:${process.env.AGENT2_AXL_PORT}`;
-  }
-  // Cross-connect: Agent1 (9002) always knows Agent2 (9003) and vice-versa
-  if (port === 9002) {
-    const a2Ens = process.env.AGENT2_ENS_NAME ?? 'execute-agent.eth';
-    const a2Port = process.env.AGENT2_AXL_PORT ?? '9003';
-    peerRegistry[a2Ens] = `http://127.0.0.1:${a2Port}`;
-  }
-  if (port === 9003) {
-    const a1Ens = process.env.AGENT1_ENS_NAME ?? 'research-agent.eth';
-    peerRegistry[a1Ens] = `http://127.0.0.1:9002`;
-    // Also register self by detected ENS so Agent 1 can reach us by name
-    peerRegistry[agentEns] = `http://127.0.0.1:${port}`;
-  }
+async function loadTools(agentEns: string): Promise<Record<string, ToolEntry>> {
+  const tools: Record<string, ToolEntry> = {};
+  try {
+    const { getAgentLocalToolStorePath, getAgentLocalRegistryPath } = await import('../config/paths.js');
+    const agentSlug = process.env.PAN_DEFAULT_AGENT || 'auto-agent';
+    const storePath = getAgentLocalToolStorePath(agentSlug);
+    const registryPath = getAgentLocalRegistryPath(agentSlug);
 
-  const messages: StoredMessage[] = [];
+    const [storeRaw, regRaw] = await Promise.all([
+      readFile(storePath, 'utf8').catch(() => null),
+      readFile(registryPath, 'utf8').catch(() => null),
+    ]);
 
-  // ── Load real tools from local storage ────────────────────────────────────
-  async function loadRealTools(): Promise<Record<string, { name: string; description: string; version?: string; code?: string; schema?: unknown; tags?: string[] }>> {
-    const tools: Record<string, { name: string; description: string; version?: string; code?: string; schema?: unknown; tags?: string[] }> = {};
-    try {
-      const { getAgentLocalToolStorePath, getAgentLocalRegistryPath } = await import('../config/paths.js');
-      const agentSlug = agentEns.replace(/\s+/g, '-').toLowerCase() || 'auto-agent';
-      const storePath = getAgentLocalToolStorePath(agentSlug);
-      const registryPath = getAgentLocalRegistryPath(agentSlug);
-
-      const [storeRaw, regRaw] = await Promise.all([
-        readFile(storePath, 'utf8').catch(() => null),
-        readFile(registryPath, 'utf8').catch(() => null),
-      ]);
-
-      if (storeRaw && regRaw) {
-        const store = JSON.parse(storeRaw) as { blobs?: Record<string, Record<string, unknown>> };
-        const reg = JSON.parse(regRaw) as { rootHash?: string };
-        if (store.blobs?.[reg.rootHash ?? '']) {
-          const index = store.blobs[reg.rootHash!] as Record<string, unknown>;
-          for (const [name, hash] of Object.entries(index)) {
-            if (name.startsWith('_') || typeof hash !== 'string') continue;
-            const blob = store.blobs[hash];
-            if (blob && typeof blob === 'object' && !Array.isArray(blob)) {
-              tools[name] = {
-                name,
-                description: typeof (blob as any).description === 'string' ? (blob as any).description : '',
-                version: typeof (blob as any).version === 'string' ? (blob as any).version : undefined,
-                code: typeof (blob as any).code === 'string' ? (blob as any).code : undefined,
-                schema: (blob as any).schema,
-                tags: Array.isArray((blob as any).tags) ? (blob as any).tags : undefined,
-              };
-            }
+    if (storeRaw && regRaw) {
+      const store = JSON.parse(storeRaw) as { blobs?: Record<string, Record<string, unknown>> };
+      const reg = JSON.parse(regRaw) as { rootHash?: string };
+      if (store.blobs?.[reg.rootHash ?? '']) {
+        const index = store.blobs[reg.rootHash!] as Record<string, unknown>;
+        for (const [name, hash] of Object.entries(index)) {
+          if (name.startsWith('_') || typeof hash !== 'string' || !name.trim()) continue;
+          const blob = store.blobs[hash];
+          if (blob && typeof blob === 'object' && !Array.isArray(blob)) {
+            tools[name] = {
+              name,
+              description: typeof (blob as any).description === 'string' ? (blob as any).description : '',
+              version: typeof (blob as any).version === 'string' ? (blob as any).version : undefined,
+              code: typeof (blob as any).code === 'string' ? (blob as any).code : undefined,
+              schema: (blob as any).schema,
+              tags: Array.isArray((blob as any).tags) ? (blob as any).tags : undefined,
+            };
           }
         }
       }
-    } catch { /* return empty */ }
-    return tools;
+    }
+
+    if (Object.keys(tools).length === 0) {
+      try {
+        const { config: loadEnv } = await import('dotenv');
+        loadEnv();
+        const { ToolRegistry } = await import('@zero-agents/core');
+        const { requireEnv } = await import('../identity/ens.js');
+        const { createLocalToolRegistryOptions } = await import('./tool-storage.js');
+
+        const zeroGKey = process.env.ZERO_G_PRIVATE_KEY ?? '';
+        if (zeroGKey && zeroGKey !== '0xYOUR_AGENT2_PRIVATE_KEY_HERE') {
+          const registry = new ToolRegistry({
+            ...createLocalToolRegistryOptions(agentSlug),
+            zeroGPrivateKey: zeroGKey,
+          });
+          const results = await registry.searchTools('');
+          for (const t of (results ?? [])) {
+            const entry = t as unknown as Record<string, unknown>;
+            const name = typeof entry.name === 'string' ? entry.name : '';
+            if (!name || name in tools) continue;
+            tools[name] = {
+              name,
+              description: typeof entry.description === 'string' ? entry.description : '',
+              version: typeof entry.version === 'string' ? entry.version : undefined,
+              code: typeof entry.code === 'string' ? entry.code : undefined,
+              schema: entry.schema,
+              tags: Array.isArray(entry.tags) ? entry.tags : undefined,
+            };
+          }
+        }
+      } catch { /* registry unavailable */ }
+    }
+
+    if (Object.keys(tools).length === 0) {
+      try {
+        const { getAgentExperiencePath } = await import('../config/paths.js');
+        const expPath = getAgentExperiencePath(agentSlug);
+        const expRaw = await readFile(expPath, 'utf8').catch(() => null);
+        if (expRaw) {
+          const exp = JSON.parse(expRaw) as { experiences?: Array<{ toolUsed?: string; task?: string; success?: boolean }> };
+          for (const e of exp.experiences ?? []) {
+            if (!e.success || !e.toolUsed || e.toolUsed in tools) continue;
+            tools[e.toolUsed] = { name: e.toolUsed, description: e.task ?? '' };
+          }
+        }
+      } catch { /* no experiences */ }
+    }
+  } catch { /* empty */ }
+  return tools;
+}
+
+async function main() {
+  const agentEns = await resolveIdentity();
+  const peerId = agentEns;
+  const messages: StoredMessage[] = [];
+  const allTools = await loadTools(agentEns);
+  const peerRegistry: Record<string, string> = {};
+
+  async function refreshPeers(): Promise<void> {
+    const found = await scanForPeers(port);
+    for (const p of found) {
+      peerRegistry[p.ens] = p.url;
+    }
   }
 
-  const cachedRealTools = await loadRealTools();
-  const allTools = Object.keys(cachedRealTools).length > 0 ? cachedRealTools : DEMO_TOOLS;
+  await refreshPeers();
+  const refreshTimer = setInterval(refreshPeers, 5_000);
 
-  async function forwardToPeer(targetEns: string, body: unknown, fromEns: string): Promise<boolean> {
+  async function forwardToPeer(targetEns: string, body: unknown): Promise<boolean> {
     const url = peerRegistry[targetEns];
     if (!url) return false;
     try {
       const res = await fetch(`${url}/recv`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-from-ens': fromEns,
-          'x-from-peer-id': peerId,
-          'x-to-ens': targetEns,
-        },
+        headers: { 'Content-Type': 'application/json', 'x-from-ens': agentEns, 'x-from-peer-id': peerId, 'x-to-ens': targetEns },
         body: JSON.stringify(body),
       });
       return res.ok;
@@ -181,51 +202,31 @@ async function main() {
     const url = new URL(req.url ?? '/', `http://localhost:${port}`);
 
     try {
-      // ── Health / info ───────────────────────────────────────────────────────
       if (req.method === 'GET' && url.pathname === '/health') {
-        writeJson(res, 200, { ok: true, peerId, ens: agentEns, mode: 'pan-local-axl' });
+        writeJson(res, 200, { ok: true, peerId, ens: agentEns });
         return;
       }
       if (req.method === 'GET' && url.pathname === '/info') {
-        writeJson(res, 200, { peerId, ens: agentEns, mode: 'pan-local-axl', peers: Object.keys(peerRegistry) });
+        writeJson(res, 200, { peerId, ens: agentEns, peers: Object.keys(peerRegistry) });
         return;
       }
-
-      // ── Topology ────────────────────────────────────────────────────────────
       if (req.method === 'GET' && url.pathname === '/topology') {
-        const knownPeers = Object.entries(peerRegistry).map(([ens, addr]) => ({
-          peerId: ens, address: addr, status: 'connected',
-        }));
-        writeJson(res, 200, {
-          peerId, ens: agentEns,
-          peers: [
-            ...knownPeers,
-            { peerId: 'axl-node-global-1', status: 'connected' },
-            { peerId: 'axl-node-eu-west',  status: 'connected' },
-            { peerId: '0g-compute-node-7', status: 'connected' },
-          ],
-        });
+        const knownPeers = Object.entries(peerRegistry).map(([ens, addr]) => ({ peerId: ens, address: addr, status: 'connected' }));
+        writeJson(res, 200, { peerId, ens: agentEns, peers: knownPeers });
         return;
       }
-
-      // ── Drain inbox ─────────────────────────────────────────────────────────
       if (req.method === 'GET' && url.pathname === '/messages') {
         writeJson(res, 200, messages.splice(0, messages.length));
         return;
       }
-
-      // ── Tool list (for mesh TUI) ─────────────────────────────────────────────
       if (req.method === 'GET' && url.pathname === '/tools') {
-        const toolList = Object.values(allTools).map((t: any) => ({
-          name: t.name,
-          description: t.description,
-          version: t.version ?? undefined,
-        }));
+        const toolList = Object.values(allTools)
+          .filter(t => typeof t.name === 'string' && t.name.trim())
+          .map(t => ({ name: t.name, description: t.description ?? '', version: t.version }));
         writeJson(res, 200, { tools: toolList, ens: agentEns });
         return;
       }
 
-      // ── Receive from another AXL node (cross-terminal) ─────────────────────
       if (req.method === 'POST' && url.pathname === '/recv') {
         const msgBody = await readBody(req);
         const fromEns  = req.headers['x-from-ens']?.toString() ?? null;
@@ -237,104 +238,43 @@ async function main() {
           toPeerId: toEns, message: msgBody, receivedAt: Date.now(),
         });
 
-        // Auto-respond to tool_request messages
-        if (msgBody && typeof msgBody === 'object' && 'type' in msgBody
-            && (msgBody as any).type === 'tool_request') {
+        if (msgBody && typeof msgBody === 'object' && (msgBody as any).type === 'tool_request') {
           const requestedTool = ((msgBody as any).tool as string ?? '').trim().toLowerCase();
-          const targetEns = fromEns ?? '';
+          const senderEns = fromEns ?? '';
 
           setTimeout(async () => {
-            process.stdout.write(`\n[axl] ← tool_request from ${fromEns ?? fromPeer}: "${requestedTool}"\n`);
-            process.stdout.write(`[axl]   Locating tool in 0G Storage...\n`);
-            await new Promise(r => setTimeout(r, 800));
-            process.stdout.write(`[axl]   Packaging execution intent...\n`);
-
-            let tool: object | undefined;
+            let tool: ToolEntry | undefined;
             let matchedName = requestedTool;
 
-            if (/^(any|all|.*\btool\b.*)$/.test(requestedTool) || !allTools[requestedTool]) {
-              const allEntries = Object.entries(allTools);
-              const exactMatch = allEntries.find(([k]) => k.toLowerCase() === requestedTool);
-              const fuzzyMatch = allEntries.find(([k, v]) =>
-                k.toLowerCase().includes(requestedTool) ||
-                requestedTool.includes(k.toLowerCase()) ||
-                ((v as any).description && typeof (v as any).description === 'string' && (v as any).description.toLowerCase().includes(requestedTool))
-              );
-              if (exactMatch) { [matchedName, tool] = exactMatch; }
-              else if (fuzzyMatch) { [matchedName, tool] = fuzzyMatch; }
-              else if (allEntries.length > 0) { [matchedName, tool] = allEntries[0]; }
-            } else {
-              tool = allTools[requestedTool];
+            const exactMatch = Object.entries(allTools).find(([k]) => k.toLowerCase() === requestedTool);
+            const fuzzyMatch = Object.entries(allTools).find(([k, v]) =>
+              k.toLowerCase().includes(requestedTool) ||
+              requestedTool.includes(k.toLowerCase()) ||
+              (v.description ?? '').toLowerCase().includes(requestedTool),
+            );
+            if (exactMatch) { [matchedName, tool] = exactMatch; }
+            else if (fuzzyMatch) { [matchedName, tool] = fuzzyMatch; }
+            else if (Object.keys(allTools).length > 0) {
+              const first = Object.entries(allTools)[0];
+              [matchedName, tool] = first;
             }
 
             const reply = tool
-              ? { type: 'tool_share',     tool: matchedName, payload: tool,        from: agentEns }
+              ? { type: 'tool_share', tool: matchedName, payload: tool, from: agentEns }
               : { type: 'tool_not_found', tool: requestedTool, reason: 'not in registry', from: agentEns };
 
-          const ok = await forwardToPeer(targetEns, reply, agentEns);
-            if (ok) {
-              process.stdout.write(`[axl]   ✓ Sent "${requestedTool}" → ${targetEns}\n\n`);
-            } else {
-              let fallbackSent = false;
-              for (const [peerEns, peerUrl] of Object.entries(peerRegistry)) {
-                if (peerEns === agentEns || peerEns === targetEns) continue;
-                try {
-                  const fr = await fetch(`${peerUrl}/recv`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'x-from-ens': agentEns,
-                      'x-from-peer-id': peerId,
-                      'x-to-ens': peerEns,
-                    },
-                    body: JSON.stringify(reply),
-                  });
-                  if (fr.ok) {
-                    process.stdout.write(`[axl]   ✓ Sent "${requestedTool}" → ${peerEns} (fallback route)\n\n`);
-                    fallbackSent = true;
-                    break;
-                  }
-                } catch { /* try next peer */ }
-              }
-              if (!fallbackSent) {
-                process.stdout.write(`[axl]   ✗ Could not reach ${targetEns} — is Terminal 1 running?\n\n`);
-                messages.push({
-                  id: randomUUID(), fromPeerId: peerId, fromEns: agentEns,
-                  toPeerId: targetEns, message: reply, receivedAt: Date.now(),
-                });
-              }
+            const ok = await forwardToPeer(senderEns, reply);
+            if (!ok) {
+              process.stdout.write(`[axl] could not reach ${senderEns} to send tool reply\n`);
             }
-          }, 500);
+          }, 300);
         }
 
-        // Handle mesh protocol messages
         if (msgBody && typeof msgBody === 'object' && 'type' in msgBody) {
           const msgType = (msgBody as any).type as string;
-
-          if (msgType === 'mesh_handshake') {
-            process.stdout.write(`\n[mesh] ← handshake from ${fromEns ?? fromPeer}\n`);
-            const ackMsg = { type: 'mesh_handshake', from: agentEns, timestamp: Date.now(), ack: true };
-            messages.push({
-              id: randomUUID(), fromPeerId: fromPeer, fromEns,
-              toPeerId: toEns, message: ackMsg, receivedAt: Date.now(),
-            });
-          }
-
-          if (msgType === 'mesh_heartbeat') {
-            process.stdout.write(`[mesh] ♥ heartbeat from ${fromEns ?? fromPeer}\n`);
-          }
-
-          if (msgType === 'mesh_leave') {
-            process.stdout.write(`\n[mesh] ← ${fromEns ?? fromPeer} left mesh\n`);
-          }
-
-          if (msgType === 'tool_share' && !(msgBody as any).tool_request) {
-            const sharedTool = (msgBody as any).tool as string;
-            process.stdout.write(`\n[mesh] ← tool received "${sharedTool}" from ${fromEns ?? fromPeer}\n`);
-          }
-
-          if (msgType === 'tool_list') {
-            process.stdout.write(`[mesh] ← tool list requested by ${fromEns ?? fromPeer}\n`);
+          if (msgType === 'tool_share') {
+            const toolName = (msgBody as any).tool as string;
+            process.stdout.write(`\n[axl] tool received: "${toolName}" from ${fromEns ?? fromPeer}\n`);
           }
         }
 
@@ -342,12 +282,9 @@ async function main() {
         return;
       }
 
-      // ── Send (from CLI) → forward to peer if we know their address ──────────
       if (req.method === 'POST' && url.pathname === '/send') {
         const msgBody = await readBody(req);
-        const destEns = req.headers['x-destination-ens']?.toString()
-                     ?? req.headers['x-destination-peer-id']?.toString()
-                     ?? null;
+        const destEns = req.headers['x-destination-ens']?.toString() ?? null;
 
         messages.push({
           id: randomUUID(), fromPeerId: peerId, fromEns: agentEns,
@@ -357,16 +294,15 @@ async function main() {
         if (destEns) {
           const peerUrl = peerRegistry[destEns];
           if (!peerUrl) {
-            const knownPeers = Object.keys(peerRegistry).filter(k => k !== agentEns);
-            process.stdout.write(`[axl] ✗ unknown peer "${destEns}" — known peers: ${knownPeers.join(', ') || 'none'}\n`);
-            writeJson(res, 200, { ok: true, forwarded: false, reason: `unknown peer "${destEns}", known: [${knownPeers.join(', ')}]` });
+            process.stdout.write(`[axl] unknown peer "${destEns}"\n`);
+            writeJson(res, 200, { ok: true, forwarded: false, reason: `unknown peer "${destEns}"` });
             return;
           }
-          const ok = await forwardToPeer(destEns, msgBody, agentEns);
+          const ok = await forwardToPeer(destEns, msgBody);
           if (ok) {
-            process.stdout.write(`[axl] → forwarded to ${destEns} (${peerUrl})\n`);
+            process.stdout.write(`[axl] -> ${destEns}\n`);
           } else {
-            process.stdout.write(`[axl] ✗ forward to ${destEns} (${peerUrl}) failed — peer unreachable?\n`);
+            process.stdout.write(`[axl] send to ${destEns} failed\n`);
           }
         }
 
@@ -381,12 +317,14 @@ async function main() {
   });
 
   server.listen(port, '127.0.0.1', () => {
-    process.stdout.write(`[axl] listening on 127.0.0.1:${port}\n`);
-    process.stdout.write(`[axl] identity : ${agentEns}\n`);
-    process.stdout.write(`[axl] peers    : ${Object.keys(peerRegistry).filter(k => k !== agentEns).join(', ') || 'none yet'}\n`);
+    process.stdout.write(`[axl] listening on 127.0.0.1:${port} as ${agentEns}\n`);
+    const peerCount = Object.keys(peerRegistry).length;
+    if (peerCount > 0) {
+      process.stdout.write(`[axl] peers: ${Object.keys(peerRegistry).join(', ')}\n`);
+    }
   });
 
-  function shutdown(): void { server.close(() => process.exit(0)); }
+  function shutdown(): void { clearInterval(refreshTimer); server.close(() => process.exit(0)); }
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 }
