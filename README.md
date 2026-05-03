@@ -1,24 +1,111 @@
 # Pan Agents
 
-Claude Code-style CLI for autonomous agent workflows powered by 0G Compute, 0G Storage, ENS, and Gensyn AXL.
+**Pan Agents** is a Claude Code-style CLI for autonomous agent workflows powered by **0G Compute**, **0G Storage**, **ENS**, and **Gensyn AXL**. It provides an interactive shell where AI agents can execute tasks, generate reusable tools, learn from experience, and collaborate over a local peer-to-peer network.
+
+## Features
+
+- **Interactive REPL Shell** — A full-featured command-line interface with slash-command autocomplete, multi-line input support, and intelligent intent routing
+- **Autonomous Task Execution** — Agents automatically generate, reuse, and improve tools to complete tasks using live data from public APIs
+- **Self-Evolving Tool System** — Tools are generated on-demand, persisted to 0G Storage, and refined through adaptive memory and failure pattern tracking
+- **Multi-Agent Networking (AXL)** — Run multiple agent instances that auto-discover each other, share tools, and exchange messages over a local Gensyn AXL-compatible network
+- **ENS Identity** — Each agent binds to an ENS name for decentralized identity on the peer network
+- **Intelligent Decision Routing** — LLM-powered intent classification routes user input to the right action: chat, task execution, tool management, or network operations
+- **Root Cause Analysis** — Automatic failure categorization with actionable fix suggestions and persistent failure-pattern memory
+- **Strategy Selection** — Experience-weighted tool selection with failure-risk scoring to avoid repeating mistakes
+- **Secure Sandbox** — All generated tools run in an `isolated-vm` sandbox with controlled network access
+
+## Architecture
+
+```
+src/
+├── cli.ts                          # Entry point; Commander.js CLI definition
+├── brain/                          # Decision & intent routing layer
+│   ├── system-prompt.ts            # Decision brain system prompt + built-in tool catalog
+│   ├── decide-action.ts            # LLM-powered intent classifier (OpenRouter / 0G)
+│   ├── action-schema.ts            # Typed decision schema
+│   ├── decision-guard.ts           # Safety guardrails for decision output
+│   ├── zero-g-compute.ts           # 0G Compute chat completion adapter
+│   └── refine-task.ts              # Task normalization & refinement
+├── shell/                          # Interactive REPL
+│   ├── repl.ts                     # Main read-eval-print loop with autocomplete
+│   ├── prompt.ts                   # Prompt builder & welcome screen
+│   ├── commands.ts                 # Slash-command registry & handler dispatch
+│   ├── intent.ts                   # Intent-to-execution mapping
+│   └── execute-decision.ts         # Decision result executor
+├── runtime/                        # Agent runtime & core orchestration
+│   ├── create-agent.ts             # Agent factory (wires all patches & plugins)
+│   ├── run-task.ts                 # Task execution pipeline with verification
+│   ├── axl.ts                      # Shared AXL client (discovery, messaging, tool exchange)
+│   ├── local-axl-node.ts           # Embedded HTTP AXL node (peer discovery, tool serving)
+│   ├── axl-autostart.ts            # Auto-spawns AXL node as background process
+│   ├── tool-generator.ts           # Patched tool generation with failure-aware hints
+│   ├── strategy-selector.ts        # Experience-weighted strategy selection w/ risk scoring
+│   ├── adaptive-memory.ts          # Task similarity scoring + failure-pattern persistence
+│   ├── root-cause-analysis.ts      # Failure categorization + suggested-fix engine
+│   ├── tool-discovery.ts           # Tool discovery & registry integration
+│   ├── tool-storage.ts             # Local tool storage backend
+│   ├── patch-sandbox.ts            # Sandbox patches (error enrichment, retry logic)
+│   ├── patch-evaluator.ts          # Tool evaluator smoke-test patches
+│   ├── patch-ens.ts               # ENS sequential-write consistency patches
+│   ├── execution-gate.ts           # Pre-execution safety gate
+│   ├── output-validator.ts         # Post-execution result verification
+│   ├── trace.ts                    # Structured trace logging
+│   ├── step-logger.ts              # Per-step event logging
+│   ├── quiet-console.ts            # Console noise suppression
+│   ├── built-in-tools.ts           # Built-in tool implementations
+│   └── system-prompt.ts            # Core agent behavior system prompt
+├── commands/                       # CLI sub-commands
+│   ├── agent.ts                    # Agent CRUD (create, list, show)
+│   ├── ask.ts                      # One-off task execution
+│   ├── doctor.ts                   # Health check & infrastructure validation
+│   ├── eval.ts                     # Routing evaluation test suite
+│   ├── identity.ts                 # ENS identity management
+│   ├── init.ts                     # Project initialization
+│   ├── model.ts                    # Decision model configuration
+│   ├── network.ts                  # Network operations (status, send, share, import)
+│   └── tools.ts                    # Tool listing, search, deletion
+├── config/                         # Configuration layer
+│   ├── schema.ts                   # Zod config schema (AXL, ENS, sandbox, decision provider)
+│   ├── load-config.ts              # Config loader with defaults
+│   └── paths.ts                    # File-system path resolution
+├── agents/                         # Agent persistence
+│   ├── store.ts                    # Agent JSON store (save, load, list)
+│   └── schema.ts                   # Agent config Zod schema
+├── identity/                       # Decentralized identity
+│   └── ens.ts                      # ENS identity auto-detection & creation
+└── evals/                          # Test suites
+    ├── builtins.ts                 # Built-in tool evaluations
+    └── routing.ts                  # Intent-routing regression tests
+```
 
 ## Quick Start
 
-Open PowerShell in the project folder:
+### Prerequisites
 
-```powershell
-cd "C:\Users\Amir\Desktop\pan agents"
+- **Node.js** 22–24 (required for `isolated-vm` sandbox support)
+- **pnpm** package manager
+- A `.env` file with credentials (see [Configuration](#configuration))
+
+### Installation
+
+```bash
+git clone <repo-url>
+cd pan-agents
+pnpm install
+pnpm build
 ```
 
-Run the health check:
+### Health Check
 
-```powershell
-.\pan.ps1 doctor
+Validate your infrastructure before running:
+
+```bash
+pan doctor
 ```
 
-Expected result:
+Expected output:
 
-```text
+```
 PASS Pan config: .pan-agents/config.json loaded
 PASS Node.js runtime: v24.15.0
 PASS 0G private key: configured
@@ -29,188 +116,212 @@ PASS Tool sandbox: isolated-vm available
 PASS Gensyn AXL: reachable on port 9002
 ```
 
-If no external AXL node is listening on port `9002`, Pan auto-starts a local AXL-compatible development node.
+### Interactive Shell
 
-Start the interactive shell:
-
-```powershell
-.\pan.ps1
+```bash
+pan
 ```
 
-Inside the shell, type:
+Inside the shell:
 
-```text
-/help
-/status
-/agent
-/tools
-/network
-/share <tool-name>
-/import <tool-name>
-/peers
-Return the number 2 as JSON
-/exit
+```
+/help                          Show available commands
+/status                        Agent & infrastructure status
+/agent                         List or switch agents
+/tools                         List generated tools
+/network status                AXL identity & peer connections
+/share <tool-name>            Share a tool with all peers
+/import <tool-name>           Search peers & import a tool
+/peers                         List connected agents
+Return the number 2 as JSON    Execute a task
+/exit                          Close the shell
 ```
 
-You can also press `Ctrl+D` on an empty prompt to close the interactive shell.
+Press `Ctrl+D` on an empty line or type `/exit` to close.
+
+### One-off Tasks
+
+Execute a single task without entering the shell:
+
+```bash
+pan ask --agent auto-agent "Return the number 2 as JSON"
+```
 
 ## Multi-Agent Networking
 
-Pan supports running multiple agent instances that discover each other automatically.
+Pan supports multiple agent instances that discover each other on localhost ports **9002–9010**.
 
-**Terminal 1** — research agent:
+**Terminal 1 — Primary agent:**
 
-```powershell
-.\pan.ps1
+```bash
+pan
 ```
 
-**Terminal 2** — execute agent:
+**Terminal 2 — Secondary agent (on different port):**
 
-```powershell
-.\pan2.ps1
+```bash
+AXL_PORT=9003 pan
 ```
 
-Agents auto-discover peers on ports 9002-9010. Once connected:
+Once connected:
 
-- `/peers` — list connected agents and their tools
-- `/share <tool-name>` — share a tool from your local store with all peers
-- `/import <tool-name>` — search peers for a tool and import it locally
-- `/request <tool-name>` — alias for `/import`
-- `/network status` — show AXL identity and peer connections
-- `/network messages` — check received messages
-- `/network send <peer-ens> <message>` — send a text message to a peer
+| Command | Description |
+|---|---|
+| `/peers` | List connected agents and their tools |
+| `/share <tool>` | Share a tool with all discovered peers |
+| `/import <tool>` | Search peers for a tool and import it locally |
+| `/network status` | Show AXL identity and peer connections |
+| `/network messages` | Check received messages |
+| `/network send <ens> <msg>` | Send a text message to a peer |
 
-Tools are persisted to the local agent store and available immediately after import.
+Imported tools are persisted locally and available immediately.
 
-## CLI Commands
+## CLI Reference
 
-Run a one-off task:
+### Agent Management
 
-```powershell
-.\pan.ps1 ask --agent auto-agent "Return the number 2 as JSON"
+```bash
+pan agent list                              List all agents
+pan agent show <name>                       Show agent details
+pan agent create <name> \                   Create a new agent
+  --description "..." \
+  --capabilities "research,summarize"
 ```
 
-Agent management:
+### Identity
 
-```powershell
-.\pan.ps1 agent list
-.\pan.ps1 agent show auto-agent
-.\pan.ps1 agent create research-agent --description "Research agent" --capabilities "research,summarize,compare"
+```bash
+pan identity show <agent>                   Show ENS identity
+pan identity publish <agent>                Publish ENS records
 ```
 
-ENS identity:
+### Tools
 
-```powershell
-.\pan.ps1 identity show auto-agent
-.\pan.ps1 identity publish auto-agent
+```bash
+pan tools list --agent <agent>              List persisted tools
+pan tools search "<query>" --agent <agent>  Search tools by name/desc
 ```
 
-Tool management (persisted on 0G Storage):
+### Network
 
-```powershell
-.\pan.ps1 tools list --agent auto-agent
-.\pan.ps1 tools search "number" --agent auto-agent
-.\pan.ps1 network share-tool <tool-name>
-.\pan.ps1 network import-tool <tool-name>
+```bash
+pan network status                           Show AXL status & peers
+pan network messages                          Drain message queue
+pan network send <peer-ens> <message>        Send message to peer
+pan network share-tool <tool-name>           Share tool via AXL
+pan network import-tool <tool-name>          Import tool from peers
 ```
 
-Network:
+### Decision Model
 
-```powershell
-.\pan.ps1 network status
-.\pan.ps1 network messages
-.\pan.ps1 network send <peer-ens> <message>
+```bash
+pan model                                    Show current decision provider
+pan model openrouter <model>                 Switch to OpenRouter (requires OPENROUTER_API_KEY)
+pan model zero-g                             Switch to 0G Compute (uses ZERO_G_PRIVATE_KEY)
 ```
 
-Decision model:
+### Evaluation
 
-```powershell
-.\pan.ps1 model
-.\pan.ps1 model openrouter tencent/hy3-preview:free
-.\pan.ps1 model zero-g
+```bash
+pan eval                                     Run routing regression suite
 ```
 
-OpenRouter mode requires `OPENROUTER_API_KEY`. 0G mode uses `ZERO_G_PRIVATE_KEY`.
+## Configuration
 
-## Architecture
+### Environment Variables (`.env`)
 
-- `src/runtime/axl.ts` — shared AXL client: peer discovery, tool exchange, message helpers
-- `src/runtime/local-axl-node.ts` — local HTTP AXL node (auto-scans ports 9002-9010)
-- `src/runtime/axl-autostart.ts` — spawns AXL node as background process with logging
-- `src/commands/network.ts` — CLI network commands (status, send, share, import, messages)
-- `src/shell/commands.ts` — REPL slash commands (/share, /import, /peers, /request, /network)
-- `src/runtime/patch-sandbox.ts` — tool sandbox patches with HTTP error enrichment and EvolutionEngine retry
+| Variable | Required | Description |
+|---|---|---|
+| `ZERO_G_PRIVATE_KEY` | Yes | 0G private key for compute & storage |
+| `ENS_PRIVATE_KEY` | Yes | ENS wallet private key for identity |
+| `SEPOLIA_RPC_URL` | Yes | Sepolia RPC endpoint for ENS resolution |
+| `OPENROUTER_API_KEY` | Optional* | OpenRouter API key (required if using OpenRouter decision model) |
+| `AXL_PORT` | No | AXL listener port (default: `9002`) |
 
-## Why Use `pan.ps1`?
+*Required when `decision.provider` is set to `openrouter`.
 
-Your system Node.js is newer than `isolated-vm` supports. Pan Agents needs Node.js 22 or 24 so the secure sandbox can load correctly.
+### Config File (`.pan-agents/config.json`)
 
-The `pan.ps1` launcher automatically prepends this project-local Node runtime:
-
-```text
-.local-node\node-v24.15.0-win-x64
+```json
+{
+  "defaultAgent": "auto-agent",
+  "axl": { "enabled": true, "port": 9002, "autoStart": true },
+  "ens": { "enabled": true, "rpcUrl": "https://sepolia.drpc.org" },
+  "sandbox": { "allowUnsafeNodeVmFallback": false },
+  "decision": {
+    "provider": "openrouter",
+    "openRouterModel": "tencent/hy3-preview:free"
+  }
+}
 ```
 
-That makes commands work on this machine without changing global Node.js.
+Initialize config with:
 
-## Required Local Files
-
-These are intentionally git-ignored because they contain local config or secrets:
-
-```text
-.env
-.pan-agents/config.json
-.pan-agents/agents/*.json
-.local-node/
+```bash
+pan init
 ```
 
-Your `.env` must include:
+## How It Works
 
-```text
-ZERO_G_PRIVATE_KEY=...
-ENS_PRIVATE_KEY=...
-SEPOLIA_RPC_URL=...
-AXL_PORT=9002
-```
+1. **Intent Classification** — User input is sent to an LLM (OpenRouter or 0G Compute) which classifies it into one of 13 actions: chat responses, task execution, tool management, agent switching, network communication, etc.
 
-Do not add `ENS_NAME`; Pan auto-detects it from `ENS_PRIVATE_KEY`.
+2. **Task Execution** — For executable tasks, the agent selects a strategy:
+   - **Reuse** an existing tool if experience shows it works for similar tasks
+   - **Generate** a new tool if no good match exists or previous tools have high failure risk
+   - Tools are generated as JavaScript functions with access to `fetch()` inside an `isolated-vm` sandbox
 
-## If PowerShell Blocks The Script
+3. **Verification & Learning** — Results are validated against the original task. Failures trigger root cause analysis (API errors, wrong endpoints, bad ticker mappings, parse errors) which are recorded to a persistent failure-pattern file. Future generations use these patterns to avoid repeating mistakes.
 
-If Windows says scripts are disabled, run this once in the same PowerShell window:
+4. **Persistence** — Successful tools and experience records are stored via 0G Storage and locally, making them available across sessions.
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-```
+5. **Networking** — Each agent runs an embedded HTTP AXL node that advertises its ENS identity and tool registry. Peers auto-discover each other via port scanning, and can request/share tools or exchange messages.
 
-Then retry:
+## Tech Stack
 
-```powershell
-.\pan.ps1 doctor
+| Component | Technology |
+|---|---|
+| Language | TypeScript (ES2022, NodeNext modules) |
+| Runtime | Node.js 22–24 |
+| Agent Framework | `@zero-agents/core` (SelfEvolvingAgent) |
+| Sandboxing | `isolated-vm` |
+| CLI Framework | Commander.js |
+| Validation | Zod |
+| Networking | HTTP (local Gensyn AXL-compatible) |
+| Identity | ENS on Sepolia via Viem |
+| Storage | 0G Storage |
+| Compute | 0G Compute / OpenRouter |
+| Styling | Chalk, Ora |
+
+## Development
+
+```bash
+# Build
+pnpm build
+
+# Type-check (without emitting)
+pnpm typecheck
+
+# Run in development mode
+pnpm dev
+
+# Run health check
+pnpm doctor
+
+# Run evaluation suite
+pan eval
 ```
 
 ## Troubleshooting
 
-Run `.\pan.ps1 doctor` first. Fix the first failing check before running tasks.
+| Issue | Solution |
+|---|---|
+| `isolated-vm` unavailable | Use Node 22 or 24; run via `pan.ps1` launcher which bundles a compatible runtime |
+| AXL unreachable | Pan auto-starts a local node; check `.pan-agents/axl-{port}.log` for errors. Disable with `axl.autoStart: false` |
+| ENS publish fails | Verify Sepolia RPC URL and ensure wallet has Sepolia ETH |
+| Peers not found | Ensure the other agent terminal is running on a port in 9002–9010 |
+| OpenRouter errors | Set `OPENROUTER_API_KEY` in `.env`, or switch to `pan model zero-g` |
+| Decision routing seems off | Run `pan eval` to check routing regression results |
 
-- **Node runtime not 22 or 24**: keep `.local-node\node-v24.15.0-win-x64` in this project or install Node 24 globally.
-- **`isolated-vm` unavailable**: run `.\pan.ps1 doctor` through the launcher, not plain `pnpm dev` with Node 25.
-- **AXL unreachable**: Pan auto-starts a local node. Check `.pan-agents/axl-{port}.log` for errors.
-- **To disable auto-start**: set `.pan-agents/config.json` `axl.autoStart` to `false`.
-- **ENS publish fails**: verify Sepolia RPC and that the ENS wallet has Sepolia ETH.
-- **Peers not found**: make sure the other terminal (`pan2.ps1`) is running and its port is in 9002-9010.
+## License
 
-## Development
-
-```powershell
-corepack pnpm build
-corepack pnpm typecheck
-```
-
-If you run pnpm directly, make sure Node 24 is first on PATH:
-
-```powershell
-$nodeDir = (Resolve-Path ".local-node\node-v24.15.0-win-x64").Path
-$env:PATH = "$nodeDir;$env:PATH"
-corepack pnpm typecheck
-```
+MIT
